@@ -1,6 +1,6 @@
 {
   "name": "@dddappp/ao-cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Universal AO CLI tool for testing and automating AO dApps (replaces AOS REPL)",
   "main": "ao-cli.js",
   "bin": {
@@ -11,7 +11,14 @@
     "test": "./tests/run-tests.sh",
     "prepublishOnly": "node -e \"console.log('Running basic syntax check...'); require('./ao-cli.js'); console.log('✅ Syntax check passed');\""
   },
-  "keywords": ["ao", "cli", "blockchain", "arweave", "automation", "non-repl"],
+  "keywords": [
+    "ao",
+    "cli",
+    "blockchain",
+    "arweave",
+    "automation",
+    "non-repl"
+  ],
   "homepage": "https://github.com/dddappp/ao-cli#readme",
   "repository": {
     "type": "git",
