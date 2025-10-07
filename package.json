@@ -4,12 +4,12 @@
   "description": "Universal AO CLI tool for testing and automating AO dApps (replaces AOS REPL)",
   "main": "ao-cli.js",
   "bin": {
-    "ao-cli": "./ao-cli.js"
+    "ao-cli": "ao-cli.js"
   },
   "scripts": {
     "start": "node ao-cli.js",
     "test": "./tests/run-tests.sh",
-    "prepublishOnly": "node -e \"console.log('Running basic syntax check...'); require('./ao-cli.js'); console.log('✅ Syntax check passed');\""
+    "prepublishOnly": "node -c ao-cli.js && echo '✅ Syntax check passed'"
   },
   "keywords": [
     "ao",
