@@ -4,10 +4,6 @@
 // A comprehensive tool for interacting with any AO dApp, replacing AOS REPL for automation and testing
 
 // Setup environment BEFORE importing aoconnect - mimic AOS behavior
-process.env.HTTPS_PROXY = process.env.HTTPS_PROXY || 'http://127.0.0.1:1235';
-process.env.HTTP_PROXY = process.env.HTTP_PROXY || 'http://127.0.0.1:1235';
-process.env.ALL_PROXY = process.env.ALL_PROXY || 'http://127.0.0.1:1235';
-
 process.env.GATEWAY_URL = process.env.GATEWAY_URL || 'https://arweave.net';
 process.env.CU_URL = process.env.CU_URL || 'https://cu.ao-testnet.xyz';
 process.env.MU_URL = process.env.MU_URL || 'https://mu.ao-testnet.xyz';
