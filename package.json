@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node ao-cli.js",
     "test": "./tests/run-tests.sh",
-    "prepublishOnly": "node -c ao-cli.js && echo '✅ Syntax check passed'"
+    "prepublishOnly": "node -c ao-cli.js && echo '✅ Syntax check passed' && node -e \"const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json')); fs.writeFileSync('version.js', 'module.exports = ' + JSON.stringify(pkg.version) + ';'); console.log('✅ Version file generated:', pkg.version);\""
   },
   "keywords": [
     "ao",

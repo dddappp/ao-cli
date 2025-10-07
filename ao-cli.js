@@ -152,8 +152,21 @@ const path = require('path');
 const { Command } = require('commander');
 const { connect, createDataItemSigner } = require('@permaweb/aoconnect');
 
-// Get version from package.json to avoid hardcoding
-const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+// Get version dynamically to avoid hardcoding
+let version = '1.0.0'; // fallback version
+try {
+  // Try to read from generated version.js file first (for published packages)
+  version = require('./version.js');
+} catch (e) {
+  try {
+    // Fallback to package.json (for development)
+    const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+    version = packageJson.version;
+  } catch (e2) {
+    // Keep fallback version
+    console.warn('⚠️ Could not read version, using fallback:', version);
+  }
+}
 
 // Utility functions for better output formatting
 function formatResult(result) {
@@ -377,7 +390,7 @@ const program = new Command();
 program
   .name('ao-cli')
   .description('Universal AO CLI tool for testing and automating any AO dApp (replaces AOS REPL)')
-  .version(packageJson.version);
+  .version(version);
 
 program
   .option('--wallet <path>', 'Path to wallet file (default: ~/.aos.json)')
