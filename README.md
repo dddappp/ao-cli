@@ -49,18 +49,22 @@ This package is published as a scoped package for security and professionalism.
 ### For Maintainers
 
 ```bash
-# 1. Login to npm
+# 1. Run complete test suite
+npm link  # Make ao-cli available locally
+npm test  # Run all tests to ensure functionality
+
+# 2. Login to npm
 npm login
 
-# 2. Test package
+# 3. Test package
 npm run prepublishOnly
 
-# 3. Publish (scoped package requires --access public)
+# 4. Publish (scoped package requires --access public)
 npm publish --access public
 # View the package
 # npm view @dddappp/ao-cli
 
-# 4. Update version for new releases
+# 5. Update version for new releases
 npm version patch  # or minor/major
 npm publish --access public
 ```
