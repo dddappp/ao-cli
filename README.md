@@ -12,6 +12,7 @@ This repository is a standalone, self-contained implementation of the AO CLI wit
 
 - ✅ **Non-REPL Design**: Each command executes and exits immediately
 - ✅ **Full AO Compatibility**: Works with all AO processes and dApps
+- ✅ **Mainnet & Testnet Support**: Seamlessly switch between AO networks
 - ✅ **Automatic Module Loading**: Resolves and bundles Lua dependencies (equivalent to `.load` in AOS)
 - ✅ **Rich Output Formatting**: Clean JSON parsing and readable results
 - ✅ **Proxy Support**: Automatic proxy detection and configuration
@@ -87,11 +88,17 @@ npx @dddappp/ao-cli --help
 
 #### Spawn a Process
 ```bash
-# Spawn with default module
+# Spawn with default module (testnet)
 ao-cli spawn default --name "my-process-$(date +%s)"
 
 # Spawn with custom module
 ao-cli spawn <module-id> --name "my-process"
+
+# Spawn on mainnet with default URL (https://forward.computer)
+ao-cli spawn default --mainnet --name "mainnet-process"
+
+# Spawn on mainnet with custom URL
+ao-cli spawn default --mainnet https://your-mainnet-node.com --name "mainnet-process"
 ```
 
 #### Load Lua Code with Dependencies
@@ -153,6 +160,9 @@ ao-cli inbox <process-id> --wait --timeout 30
 #### Environment Variables
 
 ```bash
+# Mainnet mode and URL (automatically enables mainnet when set)
+export AO_URL=https://forward.computer
+
 # Proxy settings (auto-detected if not set)
 export HTTPS_PROXY=http://proxy:port
 export HTTP_PROXY=http://proxy:port
@@ -167,6 +177,49 @@ export WALLET_PATH=/path/to/wallet.json
 # Test wait time
 export AO_WAIT_TIME=3  # seconds to wait between operations
 ```
+
+> **📋 Environment Variable Details:**
+> - **`AO_URL`**: When set, automatically enables mainnet mode and uses the specified URL as the AO node endpoint. No need to combine with `--mainnet` flag.
+>   - Example: `export AO_URL=https://forward.computer` enables mainnet with Forward Computer node
+>   - The CLI parameter `--mainnet` takes priority over `AO_URL` if both are provided
+
+#### Network Configuration
+
+AO CLI supports both AO testnet and mainnet. By default, all commands use testnet.
+
+##### Testnet (Default)
+```bash
+# All commands default to testnet
+ao-cli spawn default --name "testnet-process"
+```
+
+##### Mainnet
+```bash
+# Use --mainnet flag (uses https://forward.computer as default)
+ao-cli spawn default --mainnet --name "mainnet-process"
+
+# Specify custom mainnet URL with --mainnet flag
+ao-cli spawn default --mainnet https://your-mainnet-node.com --name "mainnet-process"
+
+# Use AO_URL environment variable (automatically enables mainnet)
+export AO_URL=https://forward.computer
+ao-cli spawn default --name "mainnet-process"
+
+# Environment variable + custom URL
+export AO_URL=https://your-custom-node.com
+ao-cli spawn default --name "mainnet-process"
+```
+
+##### Network Endpoints
+- **Testnet**: `https://cu.ao-testnet.xyz`, `https://mu.ao-testnet.xyz`
+- **Mainnet**: `https://forward.computer` (default), or any AO mainnet node
+
+##### Configuration Priority
+1. **CLI parameters** take highest priority (e.g., `--mainnet https://custom-node.com`)
+2. **Environment variables** are used when CLI parameters are not provided (e.g., `AO_URL=https://custom-node.com`)
+3. **Defaults** are used when neither CLI nor environment variables are set
+
+> **💡 Important**: Setting `AO_URL` environment variable automatically enables mainnet mode. You don't need to combine it with `--mainnet` flag.
 
 #### Custom Wallet
 
@@ -210,13 +263,27 @@ ao-cli inbox "$PROCESS_ID" --latest
 
 ## Command Reference
 
+### Global Options
+
+These options work with all commands:
+
+- `--mainnet [url]`: Enable mainnet mode (uses https://forward.computer if no URL provided)
+- `--wallet <path>`: Custom wallet file path (default: ~/.aos.json)
+- `--gateway-url <url>`: Arweave gateway URL
+- `--cu-url <url>`: Compute Unit URL (testnet only)
+- `--mu-url <url>`: Messenger Unit URL (testnet only)
+- `--scheduler <id>`: Scheduler ID
+- `--proxy <url>`: Proxy URL for HTTPS/HTTP/ALL_PROXY
+
+**Environment Variables (Global):**
+- `AO_URL`: Set mainnet URL and automatically enable mainnet mode (e.g., `AO_URL=https://forward.computer`)
+
 ### `spawn <moduleId> [options]`
 
 Spawn a new AO process.
 
 **Options:**
 - `--name <name>`: Process name
-- `--wallet <path>`: Custom wallet file path
 
 ### `load <processId> <file> [options]`
 
@@ -273,14 +340,15 @@ All commands provide clean, readable output:
 
 ## Comparison with AOS REPL
 
-| Operation               | AOS REPL                | AO CLI                                   |
-| ------------------------ | ----------------------- | ---------------------------------------- |
-| Spawn                    | `aos my-process`        | `ao-cli spawn default --name my-process` |
-| Load Code                | `.load app.lua`         | `ao-cli load <pid> app.lua --wait`       |
-| Send Message             | `Send({Action="Test"})` | `ao-cli message <pid> Test --wait`       |
-| Send Message (Inbox测试) | `Send({Action="Test"})` | `ao-cli eval <pid> --data "Send({Action='Test'})" --wait` |
-| Check Inbox              | `Inbox[#Inbox]`         | `ao-cli inbox <pid> --latest`            |
-| Eval Code                | `eval code`             | `ao-cli eval <pid> --data "code" --wait` |
+| Operation               | AOS REPL                          | AO CLI                                         |
+| ------------------------ | --------------------------------- | ---------------------------------------------- |
+| Spawn                    | `aos my-process`                  | `ao-cli spawn default --name my-process`       |
+| Spawn (Mainnet)          | `aos my-process --mainnet <url>`  | `ao-cli spawn default --mainnet <url> --name my-process` |
+| Load Code                | `.load app.lua`                   | `ao-cli load <pid> app.lua --wait`             |
+| Send Message             | `Send({Action="Test"})`           | `ao-cli message <pid> Test --wait`             |
+| Send Message (Inbox测试) | `Send({Action="Test"})`           | `ao-cli eval <pid> --data "Send({Action='Test'})" --wait` |
+| Check Inbox              | `Inbox[#Inbox]`                   | `ao-cli inbox <pid> --latest`                  |
+| Eval Code                | `eval code`                       | `ao-cli eval <pid> --data "code" --wait`       |
 
 > **💡 重要说明**：
 > - 要测试Inbox功能，必须使用`ao-cli eval`在进程内部执行Send操作。直接使用`ao-cli message`不会让回复消息进入Inbox，因为那是外部API调用。

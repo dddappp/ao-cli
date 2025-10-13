@@ -5,9 +5,6 @@
 
 // Setup environment BEFORE importing aoconnect - mimic AOS behavior
 process.env.GATEWAY_URL = process.env.GATEWAY_URL || 'https://arweave.net';
-process.env.CU_URL = process.env.CU_URL || 'https://cu.ao-testnet.xyz';
-process.env.MU_URL = process.env.MU_URL || 'https://mu.ao-testnet.xyz';
-process.env.SCHEDULER = process.env.SCHEDULER || '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA';
 
 process.env.ARWEAVE_GRAPHQL = process.env.ARWEAVE_GRAPHQL || 'https://arweave.net/graphql';
 process.env.AO_URL = process.env.AO_URL || 'https://arweave.net';
@@ -312,76 +309,211 @@ function loadWallet(walletPath) {
   return JSON.parse(walletData);
 }
 
-function getConnectionInfo() {
-  return {
-    MODE: 'legacy',
-    GATEWAY_URL: process.env.GATEWAY_URL,
-    CU_URL: process.env.CU_URL,
-    MU_URL: process.env.MU_URL
-  };
-}
-
 async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
-  const signer = createDataItemSigner(wallet);
+  const connectionInfo = getConnectionInfo();
+  const isMainnet = connectionInfo.MODE === 'mainnet';
 
-  // Add AOS version tag
-  tags = tags.concat([{ name: 'aos-Version', value: '2.0.7' }]);
+  if (isMainnet) {
+    // Mainnet mode - use createSigner instead of createDataItemSigner
+    const { createSigner } = require('@permaweb/aoconnect');
+    const signer = createSigner(wallet);
 
-  const spawnParams = {
-    module: moduleId,
-    scheduler: scheduler || process.env.SCHEDULER,
-    signer,
-    tags,
-    data: data || ''
-  };
+    // Add version tag
+    tags = tags.concat([{ name: 'aos-version', value: version }]);
 
-  console.log('🚀 Spawning AO process...');
-  console.log('   Module:', spawnParams.module);
-  console.log('   Scheduler:', spawnParams.scheduler);
-  console.log('   Tags:', spawnParams.tags.map(t => `${t.name}=${t.value}`).join(', '));
+    // Auto-detect scheduler for mainnet
+    let scheduler = process.env.SCHEDULER;
+    if (!scheduler) {
+      let schedulerUrl = connectionInfo.URL;
+      if (schedulerUrl === 'https://forward.computer') {
+        schedulerUrl = 'https://scheduler.forward.computer';
+      }
+      try {
+        const response = await fetch(schedulerUrl + '/~meta@1.0/info/address');
+        scheduler = await response.text();
+        console.log('📅 Auto-detected scheduler:', scheduler);
+      } catch (e) {
+        console.warn('⚠️ Failed to auto-detect scheduler, using default');
+        scheduler = '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA';
+      }
+    }
 
-  const result = await connect(getConnectionInfo()).spawn(spawnParams);
+    // Auto-detect authority for mainnet
+    let authority = process.env.AUTHORITY;
+    if (!authority) {
+      try {
+        if (connectionInfo.URL === 'https://forward.computer') {
+          authority = "QWg43UIcJhkdZq6ourr1VbnkwcP762Lppd569bKWYKY";
+        } else {
+          const response = await fetch(connectionInfo.URL + '/~meta@1.0/info/address');
+          authority = await response.text();
+        }
+        authority = authority + ',fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
+        console.log('🏛️ Auto-detected authority:', authority);
+      } catch (e) {
+        console.warn('⚠️ Failed to auto-detect authority, using default');
+        authority = 'fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
+      }
+    }
 
-  // Small delay to ensure process is ready
-  await new Promise(resolve => setTimeout(resolve, 500));
+    const spawnParams = {
+      device: 'process@1.0',
+      'scheduler-device': 'scheduler@1.0',
+      'push-device': 'push@1.0',
+      'execution-device': 'lua@5.3a',
+      'data-protocol': 'ao',
+      variant: 'ao.N.1',
+      module: moduleId,
+      scheduler: scheduler,
+      authority: authority,
+      ...tags.reduce((a, t) => ({ ...a, [t.name.toLowerCase()]: t.value }), {}),
+      'signing-format': 'ANS-104',
+      data: data || ''
+    };
 
-  return result;
+    console.log('🚀 Spawning AO process on Mainnet...');
+    console.log('   Module:', spawnParams.module);
+    console.log('   AO URL:', connectionInfo.URL);
+    console.log('   Tags:', Object.keys(spawnParams).filter(k => k.startsWith('aos-') || k === 'name').map(k => `${k}=${spawnParams[k]}`).join(', '));
+
+    const { request } = connect({ ...connectionInfo, signer });
+    const response = await request({
+      path: '/push',
+      method: 'POST',
+      type: 'Process',
+      ...spawnParams
+    });
+
+    const result = response.process;
+    console.log('✅ Process spawned:', result);
+
+    // Small delay to ensure process is ready
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return result;
+
+  } else {
+    // Legacy/Testnet mode - original implementation
+    const signer = createDataItemSigner(wallet);
+
+    // Add AOS version tag
+    tags = tags.concat([{ name: 'aos-Version', value: version }]);
+
+    const spawnParams = {
+      module: moduleId,
+      scheduler: scheduler || process.env.SCHEDULER || '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA',
+      signer,
+      tags,
+      data: data || ''
+    };
+
+    console.log('🚀 Spawning AO process...');
+    console.log('   Module:', spawnParams.module);
+    console.log('   Scheduler:', spawnParams.scheduler);
+    console.log('   Tags:', spawnParams.tags.map(t => `${t.name}=${t.value}`).join(', '));
+
+    const result = await connect(connectionInfo).spawn(spawnParams);
+
+    // Small delay to ensure process is ready
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    return result;
+  }
 }
 
 async function sendMessage({ wallet, processId, action, data, tags = [] }) {
-  const signer = createDataItemSigner(wallet);
+  const connectionInfo = getConnectionInfo();
+  const isMainnet = connectionInfo.MODE === 'mainnet';
 
-  const messageParams = {
-    process: processId,
-    signer,
-    tags: [
-      { name: 'Action', value: action },
-      ...tags
-    ],
-    data: data || ''
-  };
+  if (isMainnet) {
+    // Mainnet mode - use different message format
+    const { createSigner } = require('@permaweb/aoconnect');
+    const signer = createSigner(wallet);
 
-  console.log('📨 Sending message...');
-  console.log('   Process:', processId);
-  console.log('   Action:', action);
-  console.log('   Data:', data ? data.substring(0, 100) + (data.length > 100 ? '...' : '') : 'none');
+    const messageParams = {
+      type: 'Message',
+      path: `/${processId}/push`,
+      method: 'POST',
+      target: processId,
+      'data-protocol': 'ao',
+      'signing-format': 'ANS-104',
+      action: action,
+      ...tags.reduce((a, t) => ({ ...a, [t.name.toLowerCase()]: t.value }), {}),
+      data: data || ''
+    };
 
-  const result = await connect(getConnectionInfo()).message(messageParams);
+    console.log('📨 Sending message to Mainnet...');
+    console.log('   Process:', processId);
+    console.log('   Action:', action);
+    console.log('   AO URL:', connectionInfo.URL);
 
-  return result;
+    const { request } = connect({ ...connectionInfo, signer });
+    const result = await request(messageParams);
+    return result.id || result.messageId;
+
+  } else {
+    // Legacy/Testnet mode - original implementation
+    const signer = createDataItemSigner(wallet);
+
+    const messageParams = {
+      process: processId,
+      signer,
+      tags: [
+        { name: 'Action', value: action },
+        ...tags
+      ],
+      data: data || ''
+    };
+
+    console.log('📨 Sending message...');
+    console.log('   Process:', processId);
+    console.log('   Action:', action);
+    console.log('   Data:', data ? data.substring(0, 100) + (data.length > 100 ? '...' : '') : 'none');
+
+    const result = await connect(connectionInfo).message(messageParams);
+    return result;
+  }
 }
 
 async function getResult({ wallet, processId, messageId }) {
+  const connectionInfo = getConnectionInfo();
+  const isMainnet = connectionInfo.MODE === 'mainnet';
+
   console.log('📥 Getting result...');
   console.log('   Process:', processId);
   console.log('   Message:', messageId);
+  if (isMainnet) {
+    console.log('   AO URL:', connectionInfo.URL);
+  }
 
-  const result = await connect(getConnectionInfo()).result({
-    process: processId,
-    message: messageId
-  });
+  if (isMainnet) {
+    // Mainnet mode - different result retrieval
+    const { createSigner } = require('@permaweb/aoconnect');
+    const signer = createSigner(wallet);
+    const { request } = connect({ ...connectionInfo, signer });
+    const result = await request({
+      path: `/${processId}/compute/${messageId}`,
+      method: 'GET',
+      accept: 'application/json',
+      'accept-bundle': 'true'
+    });
 
-  return result;
+    // Parse the mainnet result format
+    const body = JSON.parse(result.body || '{}');
+    const results = body.results || [];
+    if (results.length > 0) {
+      return results[0]; // Return the first result
+    } else {
+      return { Error: 'No results found' };
+    }
+
+  } else {
+    // Legacy/Testnet mode - original implementation
+    const result = await connect(connectionInfo).result({
+      process: processId,
+      message: messageId
+    });
+    return result;
+  }
 }
 
 // Main CLI setup
@@ -398,7 +530,8 @@ program
   .option('--cu-url <url>', 'Compute Unit URL')
   .option('--mu-url <url>', 'Messenger Unit URL')
   .option('--scheduler <id>', 'Scheduler ID')
-  .option('--proxy <url>', 'Proxy URL for HTTPS/HTTP/ALL_PROXY');
+  .option('--proxy <url>', 'Proxy URL for HTTPS/HTTP/ALL_PROXY')
+  .option('--mainnet [url]', 'Enable mainnet mode (uses https://forward.computer if no URL provided)');
 
 program
   .command('spawn')
@@ -742,4 +875,41 @@ program
     }
   });
 
+// Parse CLI arguments
 program.parse();
+
+// Now we can check both CLI options and environment variables
+function getConnectionInfo() {
+  // Check for mainnet mode (CLI param takes priority over env var)
+  const cliMainnet = program.opts().mainnet;
+  const envAoUrl = process.env.AO_URL;
+  const mainnetUrl = cliMainnet || envAoUrl;
+
+  if (mainnetUrl) {
+    // Mainnet mode - determine URL from CLI param or env var
+    let finalUrl = mainnetUrl;
+
+    // If --mainnet is provided without URL (true), use default mainnet URL
+    if (cliMainnet === true) {
+      finalUrl = 'https://forward.computer';
+    }
+
+    console.log('🌐 Using Mainnet mode with AO URL:', finalUrl);
+    process.env.AO_URL = finalUrl;
+
+    // Mainnet will auto-detect scheduler and authority
+    return {
+      MODE: 'mainnet',
+      URL: finalUrl,
+      GATEWAY_URL: process.env.GATEWAY_URL
+    };
+  } else {
+    // Testnet/Legacy mode - default configuration
+    return {
+      MODE: 'legacy',
+      GATEWAY_URL: process.env.GATEWAY_URL,
+      CU_URL: process.env.CU_URL || 'https://cu.ao-testnet.xyz',
+      MU_URL: process.env.MU_URL || 'https://mu.ao-testnet.xyz'
+    };
+  }
+}
