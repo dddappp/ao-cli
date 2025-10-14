@@ -283,6 +283,30 @@ These options work with all commands:
 **Hidden Parameters (for AOS compatibility):**
 - `--url <url>`: Set AO URL directly (equivalent to AOS hidden parameter)
 
+### `address`
+
+Get the wallet address from the current wallet.
+
+**Usage:**
+```bash
+ao-cli address
+```
+
+**Alternative Method (if address command is not available):**
+Send a message to any process and check the inbox - the `From` field will contain your wallet address.
+
+```bash
+# Send a test message to any process
+ao-cli message <process-id> TestAddress --data "test" --wait
+
+# Check inbox to see your address in the From field
+ao-cli inbox <process-id> --latest
+```
+
+**Test Results:**
+- ✅ Direct `address` command: Shows wallet address `HrhlqAg1Tz3VfrFPozfcb2MV8uGfYlOSYO4qraRqKl4`
+- ✅ Alternative method: Messages in inbox show `From: HrhlqAg1Tz3VfrFPozfcb2MV8uGfYlOSYO4qraRqKl4`
+
 ### `spawn <moduleId> [options]`
 
 Spawn a new AO process.

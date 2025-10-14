@@ -148,6 +148,14 @@ const fs = require('fs');
 const path = require('path');
 const { Command } = require('commander');
 const { connect, createDataItemSigner } = require('@permaweb/aoconnect');
+const Arweave = require('arweave');
+
+// Initialize Arweave
+const arweave = Arweave.init({
+  host: 'arweave.net',
+  port: 443,
+  protocol: 'https'
+});
 
 // Get version dynamically to avoid hardcoding
 let version = '1.0.0'; // fallback version
@@ -533,6 +541,20 @@ program
   .option('--proxy <url>', 'Proxy URL for HTTPS/HTTP/ALL_PROXY')
   .option('--mainnet [url]', 'Enable mainnet mode (uses https://forward.computer if no URL provided)')
   .option('--url <url>', 'Set AO URL (hidden parameter for AOS compatibility)');
+
+program
+  .command('address')
+  .description('Get the wallet address from current wallet')
+  .action(async () => {
+    try {
+      const wallet = loadWallet(program.opts().wallet);
+      const address = await arweave.wallets.jwkToAddress(wallet);
+      console.log('💰 Wallet Address:', address);
+    } catch (error) {
+      console.error('❌ Error getting wallet address:', error.message);
+      process.exit(1);
+    }
+  });
 
 program
   .command('spawn')
