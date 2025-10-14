@@ -305,7 +305,7 @@ ao-cli inbox <process-id> --latest
 
 **Test Results:**
 - ✅ Direct `address` command: Shows wallet address `HrhlqAg1Tz3VfrFPozfcb2MV8uGfYlOSYO4qraRqKl4`
-- ✅ Alternative method: Messages in inbox show `From: HrhlqAg1Tz3VfrFPozfcb2MV8uGfYlOSYO4qraRqKl4`
+- ✅ Alternative method: Messages in inbox show `From` field containing the sender's wallet address
 
 ### `spawn <moduleId> [options]`
 
