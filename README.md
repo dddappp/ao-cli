@@ -293,13 +293,13 @@ ao-cli address
 ```
 
 **Alternative Method (if address command is not available):**
-Send a message to any process and check the inbox - the `From` field will contain your wallet address.
+Send a message to any process and check the **receiving process's** inbox - the `From` field will contain your wallet address.
 
 ```bash
-# Send a test message to any process
-ao-cli message <process-id> TestAddress --data "test" --wait
+# Send a test message to any process (use an action that won't be handled)
+ao-cli message <process-id> UnknownAction --data "test" --wait
 
-# Check inbox to see your address in the From field
+# Check the RECEIVING process's inbox to see your address in the From field
 ao-cli inbox <process-id> --latest
 ```
 
