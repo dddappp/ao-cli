@@ -219,7 +219,9 @@ ao-cli spawn default --name "mainnet-process"
 2. **Environment variables** are used when CLI parameters are not provided (e.g., `AO_URL=https://custom-node.com`)
 3. **Defaults** are used when neither CLI nor environment variables are set
 
-> **💡 Important**: Setting `AO_URL` environment variable automatically enables mainnet mode. You don't need to combine it with `--mainnet` flag.
+> **💡 Important**:
+> - Setting `AO_URL` environment variable automatically enables mainnet mode. You don't need to combine it with `--mainnet` flag.
+> - **Mainnet operations require payment**: Unlike testnet, mainnet processes charge fees for computation. Ensure your wallet has sufficient AO tokens.
 
 #### Custom Wallet
 
@@ -277,6 +279,9 @@ These options work with all commands:
 
 **Environment Variables (Global):**
 - `AO_URL`: Set mainnet URL and automatically enable mainnet mode (e.g., `AO_URL=https://forward.computer`)
+
+**Hidden Parameters (for AOS compatibility):**
+- `--url <url>`: Set AO URL directly (equivalent to AOS hidden parameter)
 
 ### `spawn <moduleId> [options]`
 

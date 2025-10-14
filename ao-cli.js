@@ -531,7 +531,8 @@ program
   .option('--mu-url <url>', 'Messenger Unit URL')
   .option('--scheduler <id>', 'Scheduler ID')
   .option('--proxy <url>', 'Proxy URL for HTTPS/HTTP/ALL_PROXY')
-  .option('--mainnet [url]', 'Enable mainnet mode (uses https://forward.computer if no URL provided)');
+  .option('--mainnet [url]', 'Enable mainnet mode (uses https://forward.computer if no URL provided)')
+  .option('--url <url>', 'Set AO URL (hidden parameter for AOS compatibility)');
 
 program
   .command('spawn')
@@ -882,7 +883,20 @@ program.parse();
 function getConnectionInfo() {
   // Check for mainnet mode (CLI param takes priority over env var)
   const cliMainnet = program.opts().mainnet;
+  const cliUrl = program.opts().url;
   const envAoUrl = process.env.AO_URL;
+
+  // Handle --url parameter (AOS compatibility)
+  if (cliUrl) {
+    process.env.AO_URL = cliUrl;
+    console.log('🌐 Using AO URL from --url parameter:', cliUrl);
+    return {
+      MODE: 'mainnet',
+      URL: cliUrl,
+      GATEWAY_URL: process.env.GATEWAY_URL
+    };
+  }
+
   const mainnetUrl = cliMainnet || envAoUrl;
 
   if (mainnetUrl) {
