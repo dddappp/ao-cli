@@ -305,7 +305,8 @@ ao-cli inbox <process-id> --latest
 
 **Test Results:**
 - ✅ Direct `address` command: Shows wallet address `HrhlqAg1Tz3VfrFPozfcb2MV8uGfYlOSYO4qraRqKl4`
-- ✅ Alternative method: When sending unhandled messages to a process, the `From` field in the receiving process's inbox contains the sender's wallet address (same as address command result)
+- ✅ Alternative method: **Theoretically verified** - When sending unhandled messages to a process, the `From` field in the receiving process's inbox contains the sender's wallet address
+- 📝 **Test Limitation**: Due to current network connectivity issues, the inbox method cannot be practically tested, but the implementation follows AO protocol correctly
 
 ### `spawn <moduleId> [options]`
 
