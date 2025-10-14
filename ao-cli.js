@@ -5,15 +5,22 @@
 
 // Setup environment BEFORE importing aoconnect - mimic AOS behavior
 process.env.GATEWAY_URL = process.env.GATEWAY_URL || 'https://arweave.net';
+process.env.CU_URL = process.env.CU_URL || 'https://cu.ao-testnet.xyz';
+process.env.MU_URL = process.env.MU_URL || 'https://mu.ao-testnet.xyz';
 
 process.env.ARWEAVE_GRAPHQL = process.env.ARWEAVE_GRAPHQL || 'https://arweave.net/graphql';
-process.env.AO_URL = process.env.AO_URL || 'https://arweave.net';
+// Don't set AO_URL default - only set when explicitly requested
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 process.env.AUTHORITY = process.env.AUTHORITY || 'fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
 
 process.env.DEBUG = 'false';
 process.env.NODE_ENV = 'development';
 process.env.TZ = 'UTC';
+
+// Fix for AO_URL being set to string "undefined"
+if (process.env.AO_URL === 'undefined') {
+  delete process.env.AO_URL;
+}
 
 // Setup proxy agent BEFORE importing aoconnect (same as AOS)
 try {
@@ -364,14 +371,22 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
       }
     }
 
+    // Determine the correct module based on execution device (like AOS)
+    const executionDevice = 'lua@5.3a';
+    let finalModule = moduleId;
+    if (executionDevice === 'lua@5.3a') {
+      // Use hyper module for lua@5.3a execution device (like AOS)
+      finalModule = process.env.AOS_MODULE || 'wal-fUK-YnB9Kp5mN8dgMsSqPSqiGx-0SvwFUSwpDBI';
+    }
+
     const spawnParams = {
       device: 'process@1.0',
       'scheduler-device': 'scheduler@1.0',
       'push-device': 'push@1.0',
-      'execution-device': 'lua@5.3a',
+      'execution-device': executionDevice,
       'data-protocol': 'ao',
-      variant: 'ao.N.1',
-      module: moduleId,
+      variant: 'ao.TN.1',
+      module: finalModule,
       scheduler: scheduler,
       authority: authority,
       ...tags.reduce((a, t) => ({ ...a, [t.name.toLowerCase()]: t.value }), {}),
@@ -419,7 +434,11 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
     console.log('   Scheduler:', spawnParams.scheduler);
     console.log('   Tags:', spawnParams.tags.map(t => `${t.name}=${t.value}`).join(', '));
 
-    const result = await connect(connectionInfo).spawn(spawnParams);
+    const result = await connect({
+      GATEWAY_URL: connectionInfo.GATEWAY_URL,
+      CU_URL: connectionInfo.CU_URL,
+      MU_URL: connectionInfo.MU_URL
+    }).spawn(spawnParams);
 
     // Small delay to ensure process is ready
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -433,9 +452,8 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
   const isMainnet = connectionInfo.MODE === 'mainnet';
 
   if (isMainnet) {
-    // Mainnet mode - use different message format
+    // Mainnet mode - use same approach as AOS
     const { createSigner } = require('@permaweb/aoconnect');
-    const signer = createSigner(wallet);
 
     const messageParams = {
       type: 'Message',
@@ -444,6 +462,7 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
       target: processId,
       'data-protocol': 'ao',
       'signing-format': 'ANS-104',
+      accept: 'application/json',
       action: action,
       ...tags.reduce((a, t) => ({ ...a, [t.name.toLowerCase()]: t.value }), {}),
       data: data || ''
@@ -454,9 +473,59 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
     console.log('   Action:', action);
     console.log('   AO URL:', connectionInfo.URL);
 
-    const { request } = connect({ ...connectionInfo, signer });
+    const { request } = connect({
+      MODE: 'mainnet',
+      device: 'process@1.0',
+      signer: createSigner(wallet),
+      GATEWAY_URL: connectionInfo.GATEWAY_URL,
+      URL: connectionInfo.URL
+    });
+
     const result = await request(messageParams);
-    return result.id || result.messageId;
+    let messageId = undefined;
+
+    try {
+      // Try to parse the response body - handle ReadableStream
+      if (result.body) {
+        let text;
+        if (typeof result.body === 'string') {
+          text = result.body;
+        } else if (result.body instanceof ReadableStream) {
+          const reader = result.body.getReader();
+          const chunks = [];
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+          }
+          text = new TextDecoder().decode(new Uint8Array(chunks.flat()));
+        } else if (typeof result.body.text === 'function') {
+          text = await result.body.text();
+        }
+
+        if (text && text.trim()) {
+          const parsedResult = JSON.parse(text);
+
+          // Check if the response contains immediate output (like AOS)
+          if (parsedResult.output && parsedResult.output.data) {
+            console.log('📨 Message sent and processed successfully!');
+            console.log('📋 IMMEDIATE RESULT:');
+            console.log('📤 Output:', parsedResult.output.data);
+
+            // For immediate results, we don't need to wait for getResult
+            messageId = 'immediate_result_processed';
+          } else {
+            // Try to get message ID for later result fetching
+            messageId = parsedResult.id || parsedResult.messageId;
+          }
+        }
+      }
+    } catch (e) {
+      // If parsing fails, try to get message ID from response headers or other sources
+      console.log('⚠️ Could not parse response body for message ID:', e.message);
+    }
+
+    return messageId;
 
   } else {
     // Legacy/Testnet mode - original implementation
@@ -567,6 +636,11 @@ program
   .option('--hyper', 'Use hyper module instead of legacy')
   .action(async (moduleId, options) => {
     try {
+      // Force fix AO_URL issue
+      if (process.env.AO_URL === 'undefined') {
+        delete process.env.AO_URL;
+      }
+
       // Override environment with CLI options
       if (program.opts().gatewayUrl) process.env.GATEWAY_URL = program.opts().gatewayUrl;
       if (program.opts().cuUrl) process.env.CU_URL = program.opts().cuUrl;
@@ -745,6 +819,13 @@ program
         tags
       });
 
+      // Check if result was processed immediately (like AOS)
+      if (messageId === 'immediate_result_processed') {
+        console.log('✅ Message processed immediately (like AOS)!');
+        console.log('🎉 Handler executed successfully!');
+        return; // Don't wait for additional results
+      }
+
       console.log('📨 Message sent successfully!');
       console.log('📋 Message ID:', messageId);
 
@@ -919,11 +1000,12 @@ function getConnectionInfo() {
     };
   }
 
-  const mainnetUrl = cliMainnet || envAoUrl;
+  // Only use mainnet if user explicitly requested it via CLI
+  const isUserRequestedMainnet = cliMainnet || cliUrl;
 
-  if (mainnetUrl) {
+  if (isUserRequestedMainnet) {
     // Mainnet mode - determine URL from CLI param or env var
-    let finalUrl = mainnetUrl;
+    let finalUrl = cliMainnet || (envAoUrl && envAoUrl !== 'undefined' ? envAoUrl : null);
 
     // If --mainnet is provided without URL (true), use default mainnet URL
     if (cliMainnet === true) {

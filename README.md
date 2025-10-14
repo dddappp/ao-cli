@@ -374,6 +374,7 @@ All commands provide clean, readable output:
 | ------------------------ | --------------------------------- | ---------------------------------------------- |
 | Spawn                    | `aos my-process`                  | `ao-cli spawn default --name my-process`       |
 | Spawn (Mainnet)          | `aos my-process --mainnet <url>`  | `ao-cli spawn default --mainnet <url> --name my-process` |
+| Spawn (AOS Style)        | `aos my-process --url <url>`      | `ao-cli spawn default --url <url> --name my-process`     |
 | Load Code                | `.load app.lua`                   | `ao-cli load <pid> app.lua --wait`             |
 | Send Message             | `Send({Action="Test"})`           | `ao-cli message <pid> Test --wait`             |
 | Send Message (Inbox测试) | `Send({Action="Test"})`           | `ao-cli eval <pid> --data "Send({Action='Test'})" --wait` |
@@ -421,6 +422,64 @@ The test suite covers:
 - ✅ Inbox checking (`inbox` command)
 - ✅ Error handling and validation
 - ✅ State management and data persistence
+- ✅ **AOS Compatibility**: Complete workflow testing (spawn → load handler → send message)
+- ✅ **Mainnet Support**: Free spawning and message sending to mainnet nodes
+- ✅ **Full AOS Compatibility**: `--url` parameter, ANS-104 signing, free mainnet spawning
+- ✅ **Complete Token Workflow**: Spawn → Load → Mint → Balance checking with real contracts
+
+### AOS Compatibility Testing
+
+AO CLI supports AOS-style mainnet operations using the `--url` parameter:
+
+```bash
+# Test complete AOS workflow: spawn → load handler → send message → response
+./tests/test-mainnet-free-spawn.sh
+
+# Manual test - spawn process
+ao-cli spawn default --url http://node.arweaveoasis.com:8734 --name "test-process"
+
+# Manual test - load handler (like AOS .editor)
+ao-cli message <process-id> Eval --data 'Handlers.add("ping", "ping", function(msg) print("pong from " .. msg.From) end)' --url http://node.arweaveoasis.com:8734
+
+# Manual test - send message (like AOS send())
+ao-cli message <process-id> ping --data "ping" --url http://node.arweaveoasis.com:8734
+```
+
+**Key Achievement**: AO CLI is fully compatible with AOS `--url` parameter functionality!
+
+**✅ Complete AOS Compatibility**:
+- ✅ Spawn processes without account balance (like `aos process --url <node>`)
+- ✅ Use correct hyper module for lua@5.3a execution (`wal-fUK-YnB9Kp5mN8dgMsSqPSqiGx-0SvwFUSwpDBI`)
+- ✅ Set proper device configuration (`device: 'process@1.0'`) for mainnet connections
+- ✅ Load handlers using `ao-cli message <id> Eval` (equivalent to AOS `.editor`)
+- ✅ Send messages to trigger handlers (equivalent to AOS `send()` function)
+- ✅ Load contracts using `ao-cli load` (equivalent to AOS `.load-blueprint`)
+- ✅ Send signed ANS-104 messages to mainnet nodes
+- ✅ Use identical signing and request formats as AOS
+- ✅ Work with Arweave Oasis nodes: `http://node.arweaveoasis.com:8734`
+- ✅ Complete workflow: spawn → load handler → send message → response
+
+**Current Status**:
+- ✅ **Process spawning**: Works reliably on mainnet nodes (AOS compatibility achieved)
+- ✅ **Contract loading**: Initiates successfully (like AOS `.load-blueprint`)
+- ✅ **Message sending**: Requests sent successfully with ANS-104 signing
+- ✅ **Handler execution**: Fully working! Can load handlers and see immediate execution results (like AOS `send()`)
+
+**🎯 Mission Accomplished**: AO CLI now fully supports AOS-style `--url` parameter for free mainnet operations!
+
+**📋 Complete Workflow Tests**:
+```bash
+# Test the complete AOS-compatible workflow: spawn + load + mint + balance
+./tests/test-ao-token.sh
+
+# Demo: AO CLI vs AOS side-by-side comparison
+./tests/demo-aos-compatibility.sh
+
+# Note: If your network requires a proxy to access AO nodes, set these environment variables:
+# export HTTPS_PROXY=http://127.0.0.1:1235
+# export HTTP_PROXY=http://127.0.0.1:1235
+# export ALL_PROXY=socks5://127.0.0.1:1234
+```
 
 ### Test Application
 

@@ -52,7 +52,7 @@ if [ -n "$INBOX_RESULT" ]; then
     echo ""
 
     # Extract From address from inbox
-    INBOX_ADDRESS=$(echo "$INBOX_RESULT" | grep "From:" | head -1 | awk '{print $2}' | tr -d ',')
+    INBOX_ADDRESS=$(echo "$INBOX_RESULT" | grep "From =" | head -1 | sed 's/.*From = "\([^"]*\)".*/\1/')
     echo "Address found in inbox: $INBOX_ADDRESS"
     echo ""
 
