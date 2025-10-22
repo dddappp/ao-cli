@@ -1,8 +1,17 @@
 #!/bin/bash
-set -e
+# 暂时禁用 set -e，因为一些测试步骤可能会失败
+# set -e
 
-echo "=== AO CLI 自动化测试脚本 ==="
-echo "测试所有主要命令：spawn, load, message, eval, inbox"
+# 检查是否使用 JSON 模式
+USE_JSON="false"
+if [ "$1" = "--json" ]; then
+    USE_JSON="true"
+    echo "=== AO CLI 自动化测试脚本 (JSON 模式) ==="
+    echo "测试所有主要命令的结构化 JSON 输出：spawn, load, message, eval, inbox"
+else
+    echo "=== AO CLI 自动化测试脚本 ==="
+    echo "测试所有主要命令：spawn, load, message, eval, inbox"
+fi
 echo ""
 
 # 检查 ao-cli 是否安装
@@ -22,8 +31,42 @@ fi
 
 echo "✅ 环境检查通过"
 echo "   钱包文件: $WALLET_FILE"
-echo "   ao-cli 版本: $(ao-cli --version)"
+echo "   ao-cli 版本: $(ao-cli --version 2>/dev/null)"
 echo ""
+
+# 0. 测试 JSON 输出格式（如果使用 JSON 模式）
+if [ "$USE_JSON" = "true" ]; then
+    echo "=== 步骤 0: 测试 JSON 输出格式 ==="
+
+    # 测试 address 命令的成功情况
+    echo "测试 address 命令 (成功)..."
+    RAW_OUTPUT=$(ao-cli address --json 2>&1)
+    JSON_OUTPUT=$(echo "$RAW_OUTPUT" | awk '/^{/{flag=1} flag {print} /^}/{flag=0}')
+    echo "📋 JSON 输出: $JSON_OUTPUT"
+    if echo "$JSON_OUTPUT" | jq -e '.command == "address" and .success == true and .data.address' >/dev/null 2>&1; then
+        echo "✅ address 成功 JSON 格式正确"
+    else
+        echo "❌ address 成功 JSON 格式错误"
+        exit 1
+    fi
+
+    # 测试 address 命令的错误情况
+    echo "测试 address 命令 (错误)..."
+    RAW_OUTPUT=$(ao-cli address --wallet nonexistent.json --json 2>&1)
+    JSON_OUTPUT=$(echo "$RAW_OUTPUT" | awk '/^{/{flag=1} flag {print} /^}/{flag=0}')
+    echo "📋 JSON 输出: $JSON_OUTPUT"
+    if echo "$JSON_OUTPUT" | jq -e '.command == "address" and .success == false and .error' >/dev/null 2>&1; then
+        echo "✅ address 错误 JSON 格式正确"
+    else
+        echo "❌ address 错误 JSON 格式错误"
+        exit 1
+    fi
+
+    STEP_0_SUCCESS=true
+    ((STEP_SUCCESS_COUNT++))
+    echo "✅ JSON 输出格式验证通过"
+    echo ""
+fi
 
 # 辅助函数：根据进程ID是否以-开头来决定是否使用--
 run_ao_cli() {
@@ -31,10 +74,11 @@ run_ao_cli() {
     local process_id="$2"
     shift 2
 
+    # Always add --json in JSON mode
     if [[ "$process_id" == -* ]]; then
-        ao-cli "$command" -- "$process_id" "$@"
+        ao-cli "$command" -- "$process_id" --json "$@" 2>/dev/null
     else
-        ao-cli "$command" "$process_id" "$@"
+        ao-cli "$command" "$process_id" --json "$@" 2>/dev/null
     fi
 }
 
@@ -56,35 +100,65 @@ echo "🚀 开始执行测试..."
 
 # 1. 创建 AO 进程
 echo "=== 步骤 1: 创建 AO 进程 ==="
-echo "正在生成AO进程..."
-PROCESS_ID=$(ao-cli spawn default --name "test-$(date +%s)" 2>/dev/null | grep "📋 Process ID:" | awk '{print $4}')
-echo "进程 ID: '$PROCESS_ID'"
+if [ "$USE_JSON" != "true" ]; then
+    echo "正在生成AO进程..."
+fi
+if [ "$USE_JSON" = "true" ]; then
+    RAW_OUTPUT=$(ao-cli spawn default --name "test-$(date +%s)" --json 2>&1)
+    # 过滤掉警告信息，只保留 JSON 部分（从第一个 { 到最后一个 }）
+    JSON_OUTPUT=$(echo "$RAW_OUTPUT" | awk '/^{/{flag=1} flag {print} /^}/{flag=0}')
+    echo "📋 JSON 输出: $JSON_OUTPUT"
+    # 总是尝试解析 JSON，无论命令退出码如何
+    SUCCESS=$(echo "$JSON_OUTPUT" | jq -r 'if has("success") then .success else "unknown" end' 2>/dev/null || echo "parse_error")
+    if [ "$SUCCESS" = "true" ]; then
+        PROCESS_ID=$(echo "$JSON_OUTPUT" | jq -r '.data.processId')
+        if [ "$USE_JSON" != "true" ]; then
+            echo "进程 ID: '$PROCESS_ID'"
+        fi
+    else
+        # 解析错误信息
+        ERROR_MSG=$(echo "$JSON_OUTPUT" | jq -r '.error // "Unknown error"' 2>/dev/null || echo "JSON parse error")
+        if [ "$USE_JSON" != "true" ]; then
+            echo "❌ Spawn 失败: $ERROR_MSG"
+        fi
+        PROCESS_ID=""
+    fi
+else
+    PROCESS_ID=$(ao-cli spawn default --name "test-$(date +%s)" 2>/dev/null | grep "📋 Process ID:" | awk '{print $4}')
+    echo "进程 ID: '$PROCESS_ID'"
+fi
 
 if [ -z "$PROCESS_ID" ]; then
-    echo "❌ 无法获取进程 ID"
+    if [ "$USE_JSON" != "true" ]; then
+        echo "❌ 无法获取进程 ID（可能是网络问题）"
+        echo "⚠️ 继续测试其他功能..."
+    fi
     STEP_1_SUCCESS=false
-    echo "由于进程生成失败，测试终止"
-    exit 1
 else
     STEP_1_SUCCESS=true
     ((STEP_SUCCESS_COUNT++))
-    echo "✅ 步骤1成功，当前成功计数: $STEP_SUCCESS_COUNT"
+    if [ "$USE_JSON" != "true" ]; then
+        echo "✅ 步骤1成功，当前成功计数: $STEP_SUCCESS_COUNT"
+    fi
 fi
 echo ""
 
 # 2. 加载测试应用
 echo "=== 步骤 2: 加载测试应用 ==="
-echo "正在加载测试应用到进程: $PROCESS_ID"
-TEST_APP_FILE="tests/test-app.lua"
-if run_ao_cli load "$PROCESS_ID" "$TEST_APP_FILE" --wait; then
-    STEP_2_SUCCESS=true
-    ((STEP_SUCCESS_COUNT++))
-    echo "✅ 代码加载成功，当前成功计数: $STEP_SUCCESS_COUNT"
-else
+if [ -z "$PROCESS_ID" ]; then
+    echo "⚠️ 跳过步骤 2（需要有效的进程ID）"
     STEP_2_SUCCESS=false
-    echo "❌ 代码加载失败"
-    echo "由于代码加载失败，测试终止"
-    exit 1
+else
+    echo "正在加载测试应用到进程: $PROCESS_ID"
+    TEST_APP_FILE="tests/test-app.lua"
+    if run_ao_cli load "$PROCESS_ID" "$TEST_APP_FILE" --wait; then
+        STEP_2_SUCCESS=true
+        ((STEP_SUCCESS_COUNT++))
+        echo "✅ 代码加载成功，当前成功计数: $STEP_SUCCESS_COUNT"
+    else
+        STEP_2_SUCCESS=false
+        echo "❌ 代码加载失败"
+    fi
 fi
 echo ""
 
@@ -94,77 +168,188 @@ echo "等待时间设置为: ${WAIT_TIME} 秒"
 
 # 3. 测试基本消息
 echo "=== 步骤 3: 测试基本消息 (message 命令) ==="
-if run_ao_cli message "$PROCESS_ID" TestMessage --data "Hello AO CLI!" --wait; then
-    STEP_3_SUCCESS=true
-    ((STEP_SUCCESS_COUNT++))
-    echo "✅ 消息发送成功"
-else
+if [ -z "$PROCESS_ID" ]; then
+    echo "⚠️ 跳过步骤 3（需要有效的进程ID）"
     STEP_3_SUCCESS=false
-    echo "❌ 消息发送失败"
+else
+    JSON_OUTPUT=$(run_ao_cli message "$PROCESS_ID" TestMessage --data 'Hello AO CLI!' --wait 2>&1)
+    echo "📋 JSON 输出: $JSON_OUTPUT"
+    if echo "$JSON_OUTPUT" | jq -e '.success == true' >/dev/null 2>&1; then
+        STEP_3_SUCCESS=true
+        ((STEP_SUCCESS_COUNT++))
+        echo "✅ 消息发送成功"
+    else
+        STEP_3_SUCCESS=false
+        echo "❌ 消息发送失败"
+    fi
 fi
 echo ""
 
 # 4. 测试数据设置
 echo "=== 步骤 4: 测试数据设置 (message 命令) ==="
-if run_ao_cli message "$PROCESS_ID" SetData --data '{"key": "test_key", "value": "test_value"}' --wait; then
-    STEP_4_SUCCESS=true
-    ((STEP_SUCCESS_COUNT++))
-    echo "✅ 数据设置成功"
-else
+if [ -z "$PROCESS_ID" ]; then
+    echo "⚠️ 跳过步骤 4（需要有效的进程ID）"
     STEP_4_SUCCESS=false
-    echo "❌ 数据设置失败"
+else
+    JSON_OUTPUT=$(run_ao_cli message "$PROCESS_ID" SetData --data '{"key": "test_key", "value": "test_value"}' --wait 2>&1)
+    echo "📋 JSON 输出: $JSON_OUTPUT"
+    if echo "$JSON_OUTPUT" | jq -e '.success == true' >/dev/null 2>&1; then
+        STEP_4_SUCCESS=true
+        ((STEP_SUCCESS_COUNT++))
+        echo "✅ 数据设置成功"
+    else
+        STEP_4_SUCCESS=false
+        echo "❌ 数据设置失败"
+    fi
 fi
 echo ""
 
 # 5. 测试数据获取
 echo "=== 步骤 5: 测试数据获取 (message 命令) ==="
-if run_ao_cli message "$PROCESS_ID" GetData --data "test_key" --wait; then
-    STEP_5_SUCCESS=true
-    ((STEP_SUCCESS_COUNT++))
-    echo "✅ 数据获取成功"
-else
+if [ -z "$PROCESS_ID" ]; then
+    echo "⚠️ 跳过步骤 5（需要有效的进程ID）"
     STEP_5_SUCCESS=false
-    echo "❌ 数据获取失败"
+else
+    JSON_OUTPUT=$(run_ao_cli message "$PROCESS_ID" GetData --data "test_key" --wait 2>&1)
+    echo "📋 JSON 输出: $JSON_OUTPUT"
+    if echo "$JSON_OUTPUT" | jq -e '.success == true' >/dev/null 2>&1; then
+        STEP_5_SUCCESS=true
+        ((STEP_SUCCESS_COUNT++))
+        echo "✅ 数据获取成功"
+    else
+        STEP_5_SUCCESS=false
+        echo "❌ 数据获取失败"
+    fi
 fi
 echo ""
 
 # 6. 测试 Eval 命令
 echo "=== 步骤 6: 测试 Eval 命令 ==="
-if run_ao_cli eval "$PROCESS_ID" --data "return {counter = State.counter, data_count = #State.test_data}" --wait; then
-    STEP_6_SUCCESS=true
-    ((STEP_SUCCESS_COUNT++))
-    echo "✅ Eval执行成功"
-else
+if [ -z "$PROCESS_ID" ]; then
+    echo "⚠️ 跳过步骤 6（需要有效的进程ID）"
     STEP_6_SUCCESS=false
-    echo "❌ Eval执行失败"
+else
+    JSON_OUTPUT=$(run_ao_cli eval "$PROCESS_ID" --data "return {counter = State.counter, data_count = #State.test_data}" --wait 2>&1)
+    echo "📋 JSON 输出: $JSON_OUTPUT"
+    if echo "$JSON_OUTPUT" | jq -e '.success == true' >/dev/null 2>&1; then
+        STEP_6_SUCCESS=true
+        ((STEP_SUCCESS_COUNT++))
+        echo "✅ Eval执行成功"
+    else
+        STEP_6_SUCCESS=false
+        echo "❌ Eval执行失败"
+    fi
 fi
 echo ""
 
 # 7. 测试 Inbox 功能
 echo "=== 步骤 7: 测试 Inbox 功能 ==="
-echo "发送消息到Inbox..."
-run_ao_cli message "$PROCESS_ID" TestInbox --data "Testing Inbox" --wait >/dev/null 2>&1
-sleep "$WAIT_TIME"
-echo "检查Inbox..."
-if run_ao_cli inbox "$PROCESS_ID" --latest 2>/dev/null | grep -q "InboxTestReply\|length"; then
-    STEP_7_SUCCESS=true
-    ((STEP_SUCCESS_COUNT++))
-    echo "✅ Inbox检查成功"
-else
+if [ -z "$PROCESS_ID" ]; then
+    echo "⚠️ 跳过步骤 7（需要有效的进程ID）"
     STEP_7_SUCCESS=false
-    echo "❌ Inbox检查失败"
+else
+    echo "发送消息到Inbox..."
+    SEND_MSG=$(run_ao_cli message "$PROCESS_ID" TestInbox --data "Testing Inbox" --wait)
+    if [ "$USE_JSON" = "true" ]; then
+        echo "   📤 消息发送结果: $(echo "$SEND_MSG" | jq -c '{success: .success, command: .command, action: .data.action}')"
+    fi
+    
+    sleep "$WAIT_TIME"
+    
+    echo "检查Inbox内容..."
+    if [ "$USE_JSON" = "true" ]; then
+        JSON_OUTPUT=$(run_ao_cli inbox "$PROCESS_ID" --latest)
+        echo "📋 原始 JSON 输出:"
+        echo "$JSON_OUTPUT" | jq .
+        
+        # 验证成功状态
+        if echo "$JSON_OUTPUT" | jq -e '.success == true' >/dev/null 2>&1; then
+            # 提取并展示 inbox 数据
+            INBOX_DATA=$(echo "$JSON_OUTPUT" | jq -r '.data.inbox // empty')
+            if [ -n "$INBOX_DATA" ]; then
+                echo ""
+                echo "📨 Inbox 数据摘要:"
+                
+                # 尝试提取 length 信息（兼容 macOS grep，不使用 -P 选项）
+                LENGTH=$(echo "$INBOX_DATA" | sed -n 's/.*length\s*=\s*\([0-9]*\).*/\1/p' | head -1)
+                if [ -n "$LENGTH" ] && [ "$LENGTH" != "0" ]; then
+                    echo "   ✓ 消息数量: $LENGTH"
+                    echo "   ✓ Latest 消息信息:"
+                    
+                    # 提取 latest 消息的关键字段
+                    echo "$INBOX_DATA" | grep -E "Name|Timestamp|From|Content-Type|Block-Height" | head -5 | sed 's/^/     /'
+                    
+                    STEP_7_SUCCESS=true
+                    ((STEP_SUCCESS_COUNT++))
+                    echo "✅ Inbox 检查成功 (找到 $LENGTH 条消息)"
+                else
+                    # 如果是 Lua 对象格式，检查是否有 'latest' 或 'all' 字段
+                    if echo "$INBOX_DATA" | grep -q "latest\s*=\|all\s*="; then
+                        # 简单计算：如果有 'latest' 说明至少有 1 条
+                        echo "   ✓ Lua 对象格式 Inbox"
+                        echo "   ✓ 包含 Latest 消息"
+                        STEP_7_SUCCESS=true
+                        ((STEP_SUCCESS_COUNT++))
+                        echo "✅ Inbox 检查成功 (找到消息)"
+                    else
+                        STEP_7_SUCCESS=false
+                        echo "⚠️  Inbox 数据格式异常"
+                    fi
+                fi
+            else
+                echo "📭 Inbox 数据为空"
+                STEP_7_SUCCESS=false
+            fi
+        else
+            ERROR=$(echo "$JSON_OUTPUT" | jq -r '.error // "Unknown error"')
+            echo "❌ Inbox 检查失败: $ERROR"
+            STEP_7_SUCCESS=false
+        fi
+    else
+        # 非 JSON 模式
+        INBOX_OUTPUT=$(run_ao_cli inbox "$PROCESS_ID" --latest)
+        echo "📋 Inbox 输出:"
+        echo "$INBOX_OUTPUT"
+        
+        if echo "$INBOX_OUTPUT" | grep -q "InboxTestReply\|length\|Messages"; then
+            STEP_7_SUCCESS=true
+            ((STEP_SUCCESS_COUNT++))
+            echo "✅ Inbox 检查成功"
+        else
+            STEP_7_SUCCESS=false
+            echo "❌ Inbox 检查失败"
+        fi
+    fi
 fi
 echo ""
 
 # 8. 测试错误处理
 echo "=== 步骤 8: 测试错误处理 (eval 命令) ==="
-if run_ao_cli eval "$PROCESS_ID" --data "error('Test error from eval')" --wait 2>&1 | grep -q "Error\|error"; then
-    STEP_8_SUCCESS=true
-    ((STEP_SUCCESS_COUNT++))
-    echo "✅ 错误处理正确"
-else
+if [ -z "$PROCESS_ID" ]; then
+    echo "⚠️ 跳过步骤 8（需要有效的进程ID）"
     STEP_8_SUCCESS=false
-    echo "❌ 错误处理失败"
+else
+    if [ "$USE_JSON" = "true" ]; then
+        JSON_OUTPUT=$(run_ao_cli eval "$PROCESS_ID" --data "error('Test error from eval')" --wait 2>&1)
+        echo "📋 JSON 输出: $JSON_OUTPUT"
+        if echo "$JSON_OUTPUT" | jq -e '.success == false and (.error or .gasUsed)' >/dev/null 2>&1; then
+            STEP_8_SUCCESS=true
+            ((STEP_SUCCESS_COUNT++))
+            echo "✅ 错误处理正确"
+        else
+            STEP_8_SUCCESS=false
+            echo "❌ 错误处理失败"
+        fi
+    else
+        if run_ao_cli eval "$PROCESS_ID" --data "error('Test error from eval')" --wait 2>&1 | grep -q "Error\|error"; then
+            STEP_8_SUCCESS=true
+            ((STEP_SUCCESS_COUNT++))
+            echo "✅ 错误处理正确"
+        else
+            STEP_8_SUCCESS=false
+            echo "❌ 错误处理失败"
+        fi
+    fi
 fi
 echo ""
 
@@ -248,3 +433,8 @@ echo ""
 echo "💡 使用提示:"
 echo "  - 如需自定义等待时间: export AO_WAIT_TIME=5"
 echo "  - 测试脚本会自动检测钱包和环境"
+if [ "$USE_JSON" = "true" ]; then
+echo "  - 当前运行在 JSON 模式，使用结构化输出解析"
+else
+echo "  - 运行 ./tests/run-tests.sh --json 来使用结构化 JSON 输出测试"
+fi

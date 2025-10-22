@@ -32,10 +32,10 @@ try {
       const finalOptions = { ...options, dispatcher: proxyAgent };
       return originalFetch(url, finalOptions);
     };
-    console.log('🔧 ProxyAgent enabled: all fetch requests go through', process.env.HTTPS_PROXY);
+    console.error('🔧 ProxyAgent enabled: all fetch requests go through', process.env.HTTPS_PROXY);
   }
 } catch (proxyError) {
-  console.warn('⚠️ Failed to enable undici ProxyAgent:', proxyError.message);
+  console.error('⚠️ Failed to enable undici ProxyAgent:', proxyError.message);
 }
 
 // Module loading functions (ported from AOS)
@@ -135,18 +135,38 @@ async function evalLuaCode(processId, code, wait, wallet) {
     tags: []
   });
 
-  console.log('📨 Eval message sent successfully!');
-  console.log('📋 Message ID:', messageId);
+  if (!program.opts().json) {
+    console.log('📨 Eval message sent successfully!');
+    console.log('📋 Message ID:', messageId);
+  }
 
   if (wait) {
-    console.log('⏳ Waiting for eval result...');
+    if (!program.opts().json) {
+      console.log('⏳ Waiting for eval result...');
+    }
     const result = await getResult({
       wallet,
       processId,
       messageId
     });
 
-    printFormattedResult(result, 'eval', 0);
+    if (program.opts().json) {
+      const formattedResult = formatResult(result);
+      const extra = {};
+      if (formattedResult.GasUsed) extra.gasUsed = formattedResult.GasUsed;
+      if (formattedResult.Error) extra.error = formattedResult.Error;
+      console.log(createJsonOutput('load', !formattedResult.Error, {
+        messageId,
+        processId,
+        result: formattedResult
+      }, formattedResult.Error, extra));
+    } else {
+      printFormattedResult(result, 'eval', 0);
+    }
+  } else {
+    if (program.opts().json) {
+      console.log(createJsonOutput('load', true, { messageId, processId }, null, { wait: false }));
+    }
   }
 }
 
@@ -176,21 +196,45 @@ try {
     version = packageJson.version;
   } catch (e2) {
     // Keep fallback version
-    console.warn('⚠️ Could not read version, using fallback:', version);
+    console.error('⚠️ Could not read version, using fallback:', version);
   }
 }
 
 // Utility functions for better output formatting
+function createJsonOutput(command, success, data = {}, error = null, extra = {}) {
+  const output = {
+    command,
+    success,
+    timestamp: new Date().toISOString(),
+    version,
+    ...extra
+  };
+
+  if (success && data) {
+    output.data = data;
+  }
+
+  if (error) {
+    output.error = error;
+  }
+
+  return JSON.stringify(output, null, 2);
+}
+
 function formatResult(result) {
   if (!result) return result;
 
   const formatted = JSON.parse(JSON.stringify(result));
 
-  // Format Messages array
+  // Format Messages array - preserve original data and provide formatted versions
   if (formatted.Messages && Array.isArray(formatted.Messages)) {
     formatted.Messages = formatted.Messages.map(msg => {
       const formattedMsg = { ...msg };
+
+      // Preserve original Data
       if (typeof msg.Data === 'string') {
+        formattedMsg._RawData = msg.Data; // Keep original raw data
+
         try {
           formattedMsg.Data = JSON.parse(msg.Data);
           formattedMsg._DataType = 'parsed_json';
@@ -200,23 +244,31 @@ function formatResult(result) {
             if (decoded !== msg.Data) {
               formattedMsg.Data = decoded;
               formattedMsg._DataType = 'base64_decoded';
+            } else {
+              formattedMsg._DataType = 'string';
             }
           } catch (e2) {
             formattedMsg._DataType = 'string';
           }
         }
       }
+
+      // Preserve original Tags and provide formatted versions
       if (formattedMsg.Tags && Array.isArray(formattedMsg.Tags)) {
+        formattedMsg._RawTags = [...formattedMsg.Tags]; // Keep original tags array
         formattedMsg.Tags = formattedMsg.Tags.map(tag =>
           typeof tag === 'object' && tag.name && tag.value ? `${tag.name}=${tag.value}` : tag
         );
       }
+
       return formattedMsg;
     });
   }
 
-  // Format Output.data - clean ANSI codes and format
+  // Format Output.data - preserve original and provide formatted versions
   if (formatted.Output && typeof formatted.Output.data === 'string') {
+    formatted.Output._RawData = formatted.Output.data; // Keep original raw data
+
     let cleanData = formatted.Output.data.replace(/\u001b\[[0-9;]*[mG]/g, '');
     if (cleanData.startsWith('{') || cleanData.startsWith('[')) {
       try {
@@ -346,9 +398,9 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
       try {
         const response = await fetch(schedulerUrl + '/~meta@1.0/info/address');
         scheduler = await response.text();
-        console.log('📅 Auto-detected scheduler:', scheduler);
+        // Don't output in JSON mode
       } catch (e) {
-        console.warn('⚠️ Failed to auto-detect scheduler, using default');
+        console.error('⚠️ Failed to auto-detect scheduler, using default');
         scheduler = '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA';
       }
     }
@@ -364,9 +416,9 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
           authority = await response.text();
         }
         authority = authority + ',fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
-        console.log('🏛️ Auto-detected authority:', authority);
+        // Don't output in JSON mode
       } catch (e) {
-        console.warn('⚠️ Failed to auto-detect authority, using default');
+        console.error('⚠️ Failed to auto-detect authority, using default');
         authority = 'fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
       }
     }
@@ -394,10 +446,7 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
       data: data || ''
     };
 
-    console.log('🚀 Spawning AO process on Mainnet...');
-    console.log('   Module:', spawnParams.module);
-    console.log('   AO URL:', connectionInfo.URL);
-    console.log('   Tags:', Object.keys(spawnParams).filter(k => k.startsWith('aos-') || k === 'name').map(k => `${k}=${spawnParams[k]}`).join(', '));
+    // In JSON mode, don't output progress information
 
     const { request } = connect({ ...connectionInfo, signer });
     const response = await request({
@@ -408,7 +457,9 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
     });
 
     const result = response.process;
-    console.log('✅ Process spawned:', result);
+    if (!program.opts().json) {
+      console.log('✅ Process spawned:', result);
+    }
 
     // Small delay to ensure process is ready
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -429,10 +480,7 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
       data: data || ''
     };
 
-    console.log('🚀 Spawning AO process...');
-    console.log('   Module:', spawnParams.module);
-    console.log('   Scheduler:', spawnParams.scheduler);
-    console.log('   Tags:', spawnParams.tags.map(t => `${t.name}=${t.value}`).join(', '));
+    // In JSON mode, don't output progress information
 
     const result = await connect({
       GATEWAY_URL: connectionInfo.GATEWAY_URL,
@@ -468,10 +516,7 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
       data: data || ''
     };
 
-    console.log('📨 Sending message to Mainnet...');
-    console.log('   Process:', processId);
-    console.log('   Action:', action);
-    console.log('   AO URL:', connectionInfo.URL);
+    // In JSON mode, don't output progress information
 
     const { request } = connect({
       MODE: 'mainnet',
@@ -508,9 +553,11 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
 
           // Check if the response contains immediate output (like AOS)
           if (parsedResult.output && parsedResult.output.data) {
-            console.log('📨 Message sent and processed successfully!');
-            console.log('📋 IMMEDIATE RESULT:');
-            console.log('📤 Output:', parsedResult.output.data);
+            if (!program.opts().json) {
+              console.log('📨 Message sent and processed successfully!');
+              console.log('📋 IMMEDIATE RESULT:');
+              console.log('📤 Output:', parsedResult.output.data);
+            }
 
             // For immediate results, we don't need to wait for getResult
             messageId = 'immediate_result_processed';
@@ -522,7 +569,7 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
       }
     } catch (e) {
       // If parsing fails, try to get message ID from response headers or other sources
-      console.log('⚠️ Could not parse response body for message ID:', e.message);
+      console.error('⚠️ Could not parse response body for message ID:', e.message);
     }
 
     return messageId;
@@ -541,10 +588,7 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
       data: data || ''
     };
 
-    console.log('📨 Sending message...');
-    console.log('   Process:', processId);
-    console.log('   Action:', action);
-    console.log('   Data:', data ? data.substring(0, 100) + (data.length > 100 ? '...' : '') : 'none');
+    // In JSON mode, don't output progress information
 
     const result = await connect(connectionInfo).message(messageParams);
     return result;
@@ -555,12 +599,7 @@ async function getResult({ wallet, processId, messageId }) {
   const connectionInfo = getConnectionInfo();
   const isMainnet = connectionInfo.MODE === 'mainnet';
 
-  console.log('📥 Getting result...');
-  console.log('   Process:', processId);
-  console.log('   Message:', messageId);
-  if (isMainnet) {
-    console.log('   AO URL:', connectionInfo.URL);
-  }
+  // In JSON mode, don't output progress information
 
   if (isMainnet) {
     // Mainnet mode - different result retrieval
@@ -609,7 +648,8 @@ program
   .option('--scheduler <id>', 'Scheduler ID')
   .option('--proxy <url>', 'Proxy URL for HTTPS/HTTP/ALL_PROXY')
   .option('--mainnet [url]', 'Enable mainnet mode (uses https://forward.computer if no URL provided)')
-  .option('--url <url>', 'Set AO URL (hidden parameter for AOS compatibility)');
+  .option('--url <url>', 'Set AO URL (hidden parameter for AOS compatibility)')
+  .option('--json', 'Output results in JSON format for automation and scripting');
 
 program
   .command('address')
@@ -618,9 +658,17 @@ program
     try {
       const wallet = loadWallet(program.opts().wallet);
       const address = await arweave.wallets.jwkToAddress(wallet);
-      console.log('💰 Wallet Address:', address);
+      if (program.opts().json) {
+        console.log(createJsonOutput('address', true, { address }));
+      } else {
+        console.log('💰 Wallet Address:', address);
+      }
     } catch (error) {
-      console.error('❌ Error getting wallet address:', error.message);
+      if (program.opts().json) {
+        console.error(createJsonOutput('address', false, null, error.message));
+      } else {
+        console.error('❌ Error getting wallet address:', error.message);
+      }
       process.exit(1);
     }
   });
@@ -686,9 +734,8 @@ program
         if (!fs.existsSync(options.load)) {
           throw new Error(`Lua file not found: ${options.load}`);
         }
-        console.log('📄 Loading Lua file:', options.load);
+        // In JSON mode, don't output progress information
         initialData = fs.readFileSync(options.load, 'utf8');
-        console.log('📊 File size:', initialData.length, 'characters');
       }
 
       const processId = await spawnProcess({
@@ -698,11 +745,19 @@ program
         data: initialData
       });
 
-      console.log('🎉 Process spawned successfully!');
-      console.log('📋 Process ID:', processId);
+      if (program.opts().json) {
+        console.log(createJsonOutput('spawn', true, { processId }));
+      } else {
+        console.log('🎉 Process spawned successfully!');
+        console.log('📋 Process ID:', processId);
+      }
 
     } catch (error) {
-      console.error('❌ Error:', error.message);
+      if (program.opts().json) {
+        console.error(createJsonOutput('spawn', false, null, error.message));
+      } else {
+        console.error('❌ Error:', error.message);
+      }
       process.exit(1);
     }
   });
@@ -746,9 +801,8 @@ program
         if (!fs.existsSync(options.file)) {
           throw new Error(`Lua file not found: ${options.file}`);
         }
-        console.log('📄 Loading Lua file:', options.file);
+        // In JSON mode, don't output progress information
         evalData = fs.readFileSync(options.file, 'utf8');
-        console.log('📊 File size:', evalData.length, 'characters');
       }
 
       const messageId = await sendMessage({
@@ -759,21 +813,44 @@ program
         tags
       });
 
-      console.log('📨 Eval message sent successfully!');
-      console.log('📋 Message ID:', messageId);
+      if (program.opts().json) {
+        console.log(createJsonOutput('eval', true, { messageId, processId }, null, { wait: options.wait }));
+      } else {
+        console.log('📨 Eval message sent successfully!');
+        console.log('📋 Message ID:', messageId);
+      }
 
       if (options.wait) {
-        console.log('⏳ Waiting for eval result...');
+        if (!program.opts().json) {
+          console.log('⏳ Waiting for eval result...');
+        }
         const result = await getResult({
           wallet,
           processId,
           messageId
         });
-        printFormattedResult(result, 'eval', 0);
+
+        if (program.opts().json) {
+          const formattedResult = formatResult(result);
+          const extra = {};
+          if (formattedResult.GasUsed) extra.gasUsed = formattedResult.GasUsed;
+          if (formattedResult.Error) extra.error = formattedResult.Error;
+          console.log(createJsonOutput('eval', !formattedResult.Error, {
+            messageId,
+            processId,
+            result: formattedResult
+          }, formattedResult.Error, extra));
+        } else {
+          printFormattedResult(result, 'eval', 0);
+        }
       }
 
     } catch (error) {
-      console.error('❌ Error:', error.message);
+      if (program.opts().json) {
+        console.error(createJsonOutput('eval', false, null, error.message));
+      } else {
+        console.error('❌ Error:', error.message);
+      }
       process.exit(1);
     }
   });
@@ -821,27 +898,59 @@ program
 
       // Check if result was processed immediately (like AOS)
       if (messageId === 'immediate_result_processed') {
-        console.log('✅ Message processed immediately (like AOS)!');
-        console.log('🎉 Handler executed successfully!');
+        if (program.opts().json) {
+          console.log(createJsonOutput('message', true, {
+            processId,
+            action,
+            immediate: true
+          }));
+        } else {
+          console.log('✅ Message processed immediately (like AOS)!');
+          console.log('🎉 Handler executed successfully!');
+        }
         return; // Don't wait for additional results
       }
 
-      console.log('📨 Message sent successfully!');
-      console.log('📋 Message ID:', messageId);
+      if (program.opts().json) {
+        console.log(createJsonOutput('message', true, { messageId, processId, action }, null, { wait: options.wait }));
+      } else {
+        console.log('📨 Message sent successfully!');
+        console.log('📋 Message ID:', messageId);
+      }
+
 
       if (options.wait) {
-        console.log('⏳ Waiting for result...');
+        if (!program.opts().json) {
+          console.log('⏳ Waiting for result...');
+        }
         const result = await getResult({
           wallet,
           processId,
           messageId
         });
 
-        printFormattedResult(result, 'message', 0);
+        if (program.opts().json) {
+          const formattedResult = formatResult(result);
+          const extra = {};
+          if (formattedResult.GasUsed) extra.gasUsed = formattedResult.GasUsed;
+          if (formattedResult.Error) extra.error = formattedResult.Error;
+          console.log(createJsonOutput('message', !formattedResult.Error, {
+            messageId,
+            processId,
+            action,
+            result: formattedResult
+          }, formattedResult.Error, extra));
+        } else {
+          printFormattedResult(result, 'message', 0);
+        }
       }
 
     } catch (error) {
-      console.error('❌ Error:', error.message);
+      if (program.opts().json) {
+        console.error(createJsonOutput('message', false, { processId, action }, error.message));
+      } else {
+        console.error('❌ Error:', error.message);
+      }
       process.exit(1);
     }
   });
@@ -853,7 +962,6 @@ program
   .option('-l, --latest', 'Get the latest message from inbox')
   .option('-a, --all', 'Get all messages from inbox')
   .option('-w, --wait', 'Wait for new messages if inbox is empty')
-  .option('--timeout <seconds>', 'Timeout for waiting (default: 30)', '30')
   .action(async (processId, options) => {
     try {
       // Override environment with CLI options
@@ -869,10 +977,10 @@ program
 
       const wallet = loadWallet(program.opts().wallet);
 
-      console.log('📬 Checking inbox for process:', processId);
+      // In JSON mode, don't output progress information
 
       if (options.wait) {
-        console.log(`⏳ Waiting for messages (timeout: ${options.timeout}s)...`);
+        // In JSON mode, don't output progress information
 
         const timeoutMs = parseInt(options.timeout) * 1000;
         const startTime = Date.now();
@@ -896,7 +1004,9 @@ program
 
             // If we got some data, we found messages
             if (inboxResult.Output && inboxResult.Output.data) {
-              console.log('✅ Found messages in inbox!');
+              if (!program.opts().json) {
+          console.log('✅ Found messages in inbox!');
+        }
               break;
             }
 
@@ -908,7 +1018,9 @@ program
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
-        console.log('⏰ Timeout reached or messages found');
+        if (!program.opts().json) {
+          console.log('⏰ Timeout reached or messages found');
+        }
 
       } else {
         // Read the actual inbox content by evaluating Inbox variable
@@ -926,11 +1038,26 @@ program
           messageId: result
         });
 
-        printFormattedResult(inboxResult, 'inbox', 0);
+        if (program.opts().json) {
+          const formattedResult = formatResult(inboxResult);
+          const extra = {};
+          if (formattedResult.GasUsed) extra.gasUsed = formattedResult.GasUsed;
+          if (formattedResult.Error) extra.error = formattedResult.Error;
+          console.log(createJsonOutput('inbox', !formattedResult.Error, {
+            processId,
+            inbox: formattedResult.Output?.data || formattedResult
+          }, formattedResult.Error, extra));
+        } else {
+          printFormattedResult(inboxResult, 'inbox', 0);
+        }
       }
 
     } catch (error) {
-      console.error('❌ Error:', error.message);
+      if (program.opts().json) {
+        console.error(createJsonOutput('inbox', false, { processId }, error.message));
+      } else {
+        console.error('❌ Error:', error.message);
+      }
       process.exit(1);
     }
   });
@@ -956,25 +1083,24 @@ program
 
       const wallet = loadWallet(program.opts().wallet);
 
-      console.log('📄 Loading Lua file:', filePath);
+      // In JSON mode, don't output progress information
 
       // Read the main file
       if (!fs.existsSync(filePath)) {
         throw new Error(`File not found: ${filePath}`);
       }
 
-      const fileSize = fs.statSync(filePath).size;
-      console.log('📊 File size:', fileSize, 'characters');
-
       // Use the same project structure creation logic as AOS
       const project = createProjectStructure(filePath);
       const [executable] = createExecutableFromProject(project);
 
-      console.log('📦 Project structure:', project.length, 'modules');
-
       await evalLuaCode(processId, executable, options.wait, wallet);
     } catch (error) {
-      console.error('❌ Error:', error.message);
+      if (program.opts().json) {
+        console.error(createJsonOutput('load', false, { processId, file: filePath }, error.message));
+      } else {
+        console.error('❌ Error:', error.message);
+      }
       process.exit(1);
     }
   });
@@ -992,7 +1118,7 @@ function getConnectionInfo() {
   // Handle --url parameter (AOS compatibility)
   if (cliUrl) {
     process.env.AO_URL = cliUrl;
-    console.log('🌐 Using AO URL from --url parameter:', cliUrl);
+    console.error('🌐 Using AO URL from --url parameter:', cliUrl);
     return {
       MODE: 'mainnet',
       URL: cliUrl,
@@ -1012,7 +1138,7 @@ function getConnectionInfo() {
       finalUrl = 'https://forward.computer';
     }
 
-    console.log('🌐 Using Mainnet mode with AO URL:', finalUrl);
+    console.error('🌐 Using Mainnet mode with AO URL:', finalUrl);
     process.env.AO_URL = finalUrl;
 
     // Mainnet will auto-detect scheduler and authority

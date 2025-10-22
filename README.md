@@ -15,6 +15,7 @@ This repository is a standalone, self-contained implementation of the AO CLI wit
 - ✅ **Mainnet & Testnet Support**: Seamlessly switch between AO networks
 - ✅ **Automatic Module Loading**: Resolves and bundles Lua dependencies (equivalent to `.load` in AOS)
 - ✅ **Rich Output Formatting**: Clean JSON parsing and readable results
+- ✅ **Structured JSON Output**: `--json` option for automation and scripting
 - ✅ **Proxy Support**: Automatic proxy detection and configuration
 - ✅ **Comprehensive Commands**: spawn, eval, load, message, inbox operations
 - ✅ **Self-Contained Testing**: Complete test suite included
@@ -263,12 +264,63 @@ ao-cli eval "$PROCESS_ID" --data "return {counter = State.counter}" --wait
 ao-cli inbox "$PROCESS_ID" --latest
 ```
 
+### Structured JSON Output for Automation
+
+AO CLI supports structured JSON output for automation, testing, and scripting. Use the `--json` flag to enable machine-readable output.
+
+#### JSON Output Format
+
+All commands return JSON with a consistent structure:
+
+```json
+{
+  "command": "spawn|load|message|eval|inbox|address",
+  "success": true|false,
+  "timestamp": "2025-10-22T01:54:52.958Z",
+  "version": "1.0.3",
+  "data": {
+    // Command-specific data (when successful)
+    "processId": "...",
+    "messageId": "...",
+    "result": {...}
+  },
+  "error": "error message", // Only present when success is false
+  "gasUsed": 123, // Optional, present when applicable
+  "extra_fields": {...} // Command-specific additional data
+}
+```
+
+#### Examples
+
+```bash
+# Get wallet address in JSON format
+ao-cli address --json
+
+# Spawn process and parse the result
+PROCESS_ID=$(ao-cli spawn default --name "test" --json | jq -r '.data.processId')
+
+# Send message and check success
+ao-cli message "$PROCESS_ID" TestAction --data "test" --wait --json | jq '.success'
+
+# Error handling - errors go to stderr as JSON
+ao-cli address --wallet nonexistent.json --json 2>&1 | jq '.error'
+```
+
+#### Automation Benefits
+
+- **Reliable Parsing**: No more fragile text parsing with `grep` and `awk`
+- **Structured Data**: Easy access to process IDs, message IDs, and results
+- **Error Handling**: Consistent error reporting in JSON format
+- **CI/CD Ready**: Perfect for automated testing and deployment pipelines
+- **Language Agnostic**: JSON can be parsed by any programming language
+
 ## Command Reference
 
 ### Global Options
 
 These options work with all commands:
 
+- `--json`: Output results in JSON format for automation and scripting
 - `--mainnet [url]`: Enable mainnet mode (uses https://forward.computer if no URL provided)
 - `--wallet <path>`: Custom wallet file path (default: ~/.aos.json)
 - `--gateway-url <url>`: Arweave gateway URL
