@@ -293,7 +293,68 @@ ORIGINAL=$(echo "$JSON" | jq -r '.data.result.Messages[0]._RawData')
 echo "原始数据: $ORIGINAL"
 ```
 
-### 9️⃣ 性能优化建议
+### 9️⃣ 处理多个 JSON 对象输出
+
+某些命令（如 `message --wait`）可能返回多个 JSON 对象：
+- **第一个 JSON**：发送确认
+- **第二个 JSON**：包含执行结果
+
+#### 获取最后一个 JSON 对象（推荐）
+```bash
+# 获取包含结果的最后一个 JSON
+RESULT_JSON=$(ao-cli message "$PID" Action --wait --json 2>/dev/null | jq -s '.[-1]')
+
+# 现在可以安全地访问结果
+SUCCESS=$(echo "$RESULT_JSON" | jq '.success')
+RESULT=$(echo "$RESULT_JSON" | jq '.data.result')
+```
+
+#### 获取所有 JSON 对象
+```bash
+# 将所有 JSON 对象解析为数组
+ALL_JSON=$(ao-cli message "$PID" Action --wait --json 2>/dev/null | jq -s '.')
+
+# 获取数组长度
+COUNT=$(echo "$ALL_JSON" | jq 'length')
+echo "共 $COUNT 个 JSON 对象"
+
+# 分别访问
+SEND_CONFIRM=$(echo "$ALL_JSON" | jq '.[0]')
+EXEC_RESULT=$(echo "$ALL_JSON" | jq '.[1]')
+```
+
+#### 智能处理函数
+```bash
+#!/bin/bash
+
+# 智能处理多个 JSON 对象的函数
+get_final_result() {
+    local output=$(ao-cli "$@" 2>/dev/null)
+
+    # 检查是否为多个 JSON 对象
+    if echo "$output" | jq -s '.' >/dev/null 2>&1; then
+        local json_array=$(echo "$output" | jq -s '.')
+        local count=$(echo "$json_array" | jq 'length')
+
+        if [ "$count" -gt 1 ]; then
+            # 返回最后一个 JSON 对象
+            echo "$json_array" | jq '.[-1]'
+        else
+            # 单个 JSON 对象
+            echo "$json_array" | jq '.[0]'
+        fi
+    else
+        # 解析失败，返回原始输出
+        echo "$output"
+    fi
+}
+
+# 使用示例
+RESULT=$(get_final_result message "$PID" Action --wait --json)
+echo "最终结果: $RESULT"
+```
+
+### 🔟 性能优化建议
 
 ```bash
 # ❌ 不要这样做（多次调用 jq，浪费资源）
@@ -312,7 +373,7 @@ SUCCESS=$(echo "$JSON" | jq -r '.success')
 ERROR=$(echo "$JSON" | jq -r '.error // empty')
 ```
 
-### 🔟 完整脚本示例
+### 1️⃣1️⃣ 完整脚本示例
 
 ```bash
 #!/bin/bash
@@ -367,6 +428,7 @@ log_success "所有测试通过！"
 | **stdout vs stderr** | JSON 输出在 stdout，日志在 stderr。使用 `2>/dev/null` 隔离。                    |
 | **JSON 结构**        | 所有输出都有统一的 `{command, success, timestamp, version, data, error}` 结构。 |
 | **原始数据保留**     | `_RawData`, `_RawTags`, `_DataType` 字段保留原始数据，确保数据完整性。          |
+| **多 JSON 处理**     | 使用 `jq -s '.[-1]'` 获取最后一个 JSON 对象（包含结果）。                      |
 | **错误处理**         | 使用 `jq -e '.success == true'` 检查成功状态。                                  |
 | **向后兼容**         | 所有 `--wait` 命令都保持原来的"无限期等待"行为。                                |
 | **性能**             | 减少 jq 调用次数，合并字段提取。                                                |

@@ -68,13 +68,18 @@ OUTPUT=$(echo "$JSON" | jq '.data.result.Output.data')
 | `jq: parse error` | JSON 混入日志     | 使用 `2>/dev/null`                           |
 | `null` 值         | 字段不存在        | 用 `jq -r '.data.field // empty'` 提供默认值 |
 | 脚本卡住          | `--wait` 等待结果 | 正常行为，耐心等待或设置网络超时             |
+| 多个 JSON 对象    | `message --wait` 返回两个 JSON | 使用 `jq -s '.[-1]'` 获取最后一个             |
 
 ## ✨ 最佳实践
 
 ```bash
-# ✅ 好的做法
+# ✅ 处理单个 JSON 对象
 JSON=$(ao-cli command --json 2>/dev/null)
 SUCCESS=$(echo "$JSON" | jq -e '.success == true')
+
+# ✅ 处理多个 JSON 对象（获取最后一个）
+RESULT_JSON=$(ao-cli message "$PID" Action --wait --json 2>/dev/null | jq -s '.[-1]')
+RESULT=$(echo "$RESULT_JSON" | jq '.data.result')
 
 # ❌ 不好的做法
 JSON=$(ao-cli command --json 2>&1)  # 混入日志！

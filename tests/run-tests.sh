@@ -68,7 +68,28 @@ if [ "$USE_JSON" = "true" ]; then
     echo ""
 fi
 
+# 从已有的输出中提取最后一个 JSON 对象（避免重复执行命令）
+get_final_json_result_from_output() {
+    local full_output="$1"
+
+    # 优先使用 jq -s 处理 JSON 流
+    if echo "$full_output" | jq -s '.' >/dev/null 2>&1; then
+        local json_count=$(echo "$full_output" | jq -s '. | length')
+        if [ "$json_count" -gt 1 ]; then
+            # 返回最后一个 JSON 对象
+            echo "$full_output" | jq -s '.[-1]'
+        else
+            # 单个 JSON 对象
+            echo "$full_output" | jq -s '.[0]'
+        fi
+    else
+        # jq 失败时返回原始输出
+        echo "$full_output"
+    fi
+}
+
 # 辅助函数：根据进程ID是否以-开头来决定是否使用--
+# 注意：此函数只返回第一个 JSON 对象（发送确认），用于验证操作成功
 run_ao_cli() {
     local command="$1"
     local process_id="$2"
@@ -172,12 +193,34 @@ if [ -z "$PROCESS_ID" ]; then
     echo "⚠️ 跳过步骤 3（需要有效的进程ID）"
     STEP_3_SUCCESS=false
 else
-    JSON_OUTPUT=$(run_ao_cli message "$PROCESS_ID" TestMessage --data 'Hello AO CLI!' --wait 2>&1)
-    echo "📋 JSON 输出: $JSON_OUTPUT"
-    if echo "$JSON_OUTPUT" | jq -e '.success == true' >/dev/null 2>&1; then
+    # 获取完整的命令输出（包含多个 JSON 对象）
+    FULL_OUTPUT=$(run_ao_cli message "$PROCESS_ID" TestMessage --data 'Hello AO CLI!' --wait 2>&1)
+
+    # 提取第一个 JSON（发送确认）
+    if echo "$FULL_OUTPUT" | jq -s '.' >/dev/null 2>&1; then
+        FIRST_JSON=$(echo "$FULL_OUTPUT" | jq -s '.[0]')
+    else
+        # jq 失败时的备用方案
+        FIRST_JSON=$(echo "$FULL_OUTPUT" | awk '/^{/{flag=1} flag {print} /^}/{flag=0}' | head -n 5)
+    fi
+    echo "📋 第一个 JSON (发送确认):"
+    echo "$FIRST_JSON" | jq -c '.' 2>/dev/null || echo "$FIRST_JSON"
+
+    if echo "$FIRST_JSON" | jq -e '.success == true' >/dev/null 2>&1; then
         STEP_3_SUCCESS=true
         ((STEP_SUCCESS_COUNT++))
         echo "✅ 消息发送成功"
+
+        # 实际演示：从同一个输出中提取最后一个 JSON（完整结果）
+        echo ""
+        echo "🔍 演示：从同一输出提取完整结果..."
+        LAST_JSON=$(get_final_json_result_from_output "$FULL_OUTPUT")
+        echo "📋 最后一个 JSON (完整结果):"
+        echo "$LAST_JSON" | jq -c '.' 2>/dev/null || echo "$LAST_JSON"
+
+        # 从完整结果中提取实际数据
+        RECEIVED_DATA=$(echo "$LAST_JSON" | jq -r '.data.result.Messages[0].Data.received_data // "N/A"' 2>/dev/null || echo "无法提取")
+        echo "📨 实际接收到的数据: '$RECEIVED_DATA'"
     else
         STEP_3_SUCCESS=false
         echo "❌ 消息发送失败"
