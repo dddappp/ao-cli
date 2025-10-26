@@ -221,6 +221,7 @@ else
         # 从完整结果中提取实际数据
         RECEIVED_DATA=$(echo "$LAST_JSON" | jq -r '.data.result.Messages[0].Data.received_data // "N/A"' 2>/dev/null || echo "无法提取")
         echo "📨 实际接收到的数据: '$RECEIVED_DATA'"
+
     else
         STEP_3_SUCCESS=false
         echo "❌ 消息发送失败"
