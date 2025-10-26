@@ -24,14 +24,18 @@ Handlers.add(
     "TestMessage",
     Handlers.utils.hasMatchingTag("Action", "TestMessage"),
     function(msg)
+        print("🔍 TestMessage handler: Processing message with data: " .. msg.Data)
         State.counter = State.counter + 1
+        print("📊 Counter incremented to: " .. State.counter)
         local response = {
             success = true,
             counter = State.counter,
             received_data = msg.Data,
             timestamp = os.time()
         }
+        print("📤 Sending response with received_data: " .. msg.Data)
         sendResponse(json.encode(response), { Action = "TestMessageResponse" })
+        print("✅ TestMessage handler completed")
     end
 )
 

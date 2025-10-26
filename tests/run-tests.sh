@@ -222,6 +222,15 @@ else
         RECEIVED_DATA=$(echo "$LAST_JSON" | jq -r '.data.result.Messages[0].Data.received_data // "N/A"' 2>/dev/null || echo "无法提取")
         echo "📨 实际接收到的数据: '$RECEIVED_DATA'"
 
+        # 检查Output字段，看看print输出是否在data字段中
+        OUTPUT_DATA=$(echo "$LAST_JSON" | jq -r '.data.result.Output.data // "N/A"' 2>/dev/null || echo "N/A")
+        if [ "$OUTPUT_DATA" != "N/A" ]; then
+            echo "🐛 Output.data 内容 (包含print输出):"
+            echo "$OUTPUT_DATA" | head -10
+        else
+            echo "⚠️  没有找到Output.data字段"
+        fi
+
     else
         STEP_3_SUCCESS=false
         echo "❌ 消息发送失败"
