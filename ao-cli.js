@@ -1028,7 +1028,7 @@ program
           wallet,
           processId,
           action: 'Eval',
-          data: options.latest ? 'return {latest = Inbox[#Inbox], all = Inbox, length = #Inbox}' : 'return {all = Inbox, length = #Inbox}',
+          data: options.latest ? 'return {latest = Inbox[#Inbox], length = #Inbox}' : 'return {all = Inbox, length = #Inbox}',
           tags: []
         });
 
