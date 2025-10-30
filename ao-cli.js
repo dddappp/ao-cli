@@ -18,7 +18,6 @@ const DEFAULT_AUTHORITY = 'fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
 const FORWARD_COMPUTER_AUTHORITY = 'QWg43UIcJhkdZq6ourr1VbnkwcP762Lppd569bKWYKY';
 const DEFAULT_SCHEDULER_ID = '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA';
 const DEFAULT_AOS_MODULE = 'wal-fUK-YnB9Kp5mN8dgMsSqPSqiGx-0SvwFUSwpDBI';
-const LEGACY_MODULE_ID = 'ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s';
 
 // Setup environment BEFORE importing aoconnect - mimic AOS behavior
 process.env.GATEWAY_URL = process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL;
