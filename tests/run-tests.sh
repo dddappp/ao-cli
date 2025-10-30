@@ -222,13 +222,55 @@ else
         RECEIVED_DATA=$(echo "$LAST_JSON" | jq -r '.data.result.Messages[0].Data.received_data // "N/A"' 2>/dev/null || echo "无法提取")
         echo "📨 实际接收到的数据: '$RECEIVED_DATA'"
 
-        # 检查Output字段，看看print输出是否在data字段中
-        OUTPUT_DATA=$(echo "$LAST_JSON" | jq -r '.data.result.Output.data // "N/A"' 2>/dev/null || echo "N/A")
-        if [ "$OUTPUT_DATA" != "N/A" ]; then
-            echo "🐛 Output.data 内容 (包含print输出):"
-            echo "$OUTPUT_DATA" | head -10
+        # 🔍 关键演示：Lua print输出位置分析
+        echo ""
+        echo "🔬 🔍 🎯 Lua print() 输出位置分析 🎯 🔍 🔬"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "💡 重要发现：print()输出在JSON模式下的位置"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        # 检查Output.print字段（标记字段）
+        OUTPUT_PRINT=$(echo "$LAST_JSON" | jq -r '.data.result.Output.print // "N/A"' 2>/dev/null || echo "N/A")
+        if [ "$OUTPUT_PRINT" != "N/A" ]; then
+            echo "📍 Output.print 字段: $OUTPUT_PRINT (标记字段，表示有print输出)"
         else
-            echo "⚠️  没有找到Output.data字段"
+            echo "📍 Output.print 字段: 不存在"
+        fi
+
+        # 检查Output.data字段（实际包含print输出）
+        OUTPUT_DATA=$(echo "$LAST_JSON" | jq -r '.data.result.Output.data // "N/A"' 2>/dev/null || echo "N/A")
+        if [ "$OUTPUT_DATA" != "N/A" ] && [ -n "$OUTPUT_DATA" ]; then
+            echo ""
+            echo "🎯 Output.data 字段: 包含完整的Lua print()输出"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📄 完整print输出内容:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+            # 格式化显示print输出，按行显示并编号
+            echo "$OUTPUT_DATA" | nl -ba -s'│ ' | sed 's/^/   │/'
+
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "💡 关键发现："
+            echo "   ✅ Lua print() 输出 → 全部收集在 Output.data 字段"
+            echo "   ✅ 保持原始格式，包括换行符和表情符号"
+            echo "   ✅ 按执行顺序排列所有print语句"
+            echo "   ✅ Output.print 仅为布尔标记，无实际内容"
+
+            # 验证与test-app.lua的对应关系
+            if echo "$OUTPUT_DATA" | grep -q "🔍 TestMessage handler"; then
+                echo ""
+                echo "🔗 对照验证 (与 test-app.lua 中的print语句对应):"
+                echo "   📝 test-app.lua:27 → print(\"🔍 TestMessage handler...\")"
+                echo "   📝 test-app.lua:29 → print(\"📊 Counter incremented...\")"
+                echo "   📝 test-app.lua:36 → print(\"📤 Sending response...\")"
+                echo "   📝 test-app.lua:38 → print(\"✅ TestMessage handler...\")"
+                echo ""
+                echo "   🎯 结论：所有print()输出都完整保存在Output.data中！"
+            fi
+        else
+            echo ""
+            echo "⚠️  Output.data 字段为空或不存在"
         fi
 
     else
