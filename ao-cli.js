@@ -1157,12 +1157,66 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       if (referenceTag && targetProcess) {
         const reference = referenceTag.value;
 
-        // 注意：被handler成功处理的消息不会留在Inbox中
-        // 所以我们无法通过Inbox找到消息ID
-        // 这是一个已知的技术限制
-        if (!isJsonMode) {
-          console.log(`   📭 Reference=${reference}的消息已被handler处理，不在Inbox中`);
-          console.log(`   📝 这是AO系统的设计：成功处理的消息不会留在Inbox`);
+        // 多次尝试查询，因为消息处理需要时间
+        const maxRetries = 5;
+        const retryDelay = 3000; // 3秒延迟
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            if (!isJsonMode && attempt === 1) {
+              console.log(`   🔄 查询目标进程结果历史 (最多尝试 ${maxRetries} 次)...`);
+            }
+
+            // 查询目标进程的最近结果历史
+            const resultsResponse = await queryProcessResults(wallet, targetProcess, 30); // 查询最近30个结果
+
+            // 从结果中查找匹配的Reference
+            if (resultsResponse && resultsResponse.edges) {
+              for (const edge of resultsResponse.edges) {
+                if (edge.node && edge.node.Output) {
+                  // 检查是否包含我们发送的消息信息
+                  const outputStr = JSON.stringify(edge.node.Output);
+                  const tagsStr = JSON.stringify(edge.node);
+
+                  // 匹配Reference标签 - 尝试多种匹配方式
+                  if (outputStr.includes(`"Reference=${reference}"`) ||
+                    tagsStr.includes(`"Reference=${reference}"`) ||
+                    (outputStr.includes(reference) && outputStr.includes("Reference"))) {
+                    messageResult = edge.node;
+                    messageId = edge.cursor || 'found-in-history';
+                    if (!isJsonMode) {
+                      console.log(`   ✅ 第${attempt}次尝试成功！找到Reference=${reference}的处理结果`);
+                    }
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (messageResult) {
+              break; // 成功找到结果，跳出重试循环
+            } else if (attempt < maxRetries) {
+              if (!isJsonMode) {
+                console.log(`   ⏳ 第${attempt}次尝试未找到，等待 ${retryDelay}ms 后重试...`);
+              }
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+            } else {
+              if (!isJsonMode) {
+                console.log(`   📭 经过 ${maxRetries} 次尝试，仍未找到Reference=${reference}的处理记录`);
+              }
+            }
+          } catch (error) {
+            if (attempt === maxRetries) {
+              if (!isJsonMode) {
+                console.log(`   📡 所有查询尝试都失败: ${error.message}`);
+              }
+            } else {
+              if (!isJsonMode) {
+                console.log(`   ⚠️ 第${attempt}次查询失败，等待重试...`);
+              }
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
+          }
         }
       }
     }
@@ -1308,23 +1362,24 @@ async function getMessageResult(wallet, messageId, targetProcess) {
   }
 }
 
-async function queryProcessInbox(wallet, processId) {
-  // 通过eval查询进程的Inbox内容
-  const result = await sendMessage({
-    wallet,
-    processId,
-    action: 'Eval',
-    data: 'return {latest = Inbox[#Inbox], all = Inbox, length = #Inbox}',
-    tags: []
-  });
+async function queryProcessResults(wallet, processId, limit = 10) {
+  const connectionInfo = getConnectionInfo();
 
-  const inboxResult = await getResult({
-    wallet,
-    processId,
-    messageId: result
-  });
-
-  return inboxResult.Output ? inboxResult.Output.data : null;
+  if (connectionInfo.MODE === 'mainnet') {
+    const request = getRequest(connectionInfo)(wallet);
+    const result = await request({
+      method: 'GET',
+      url: `${connectionInfo.URL}/results/${processId}?limit=${limit}&sort=DESC`
+    });
+    return JSON.parse(result.body || '{}');
+  } else {
+    const connectInstance = getConnect(connectionInfo);
+    return await connectInstance.results({
+      process: processId,
+      limit: limit,
+      sort: 'DESC'
+    });
+  }
 }
 
 
