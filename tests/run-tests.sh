@@ -200,8 +200,42 @@ else
     if echo "$FULL_OUTPUT" | jq -s '.' >/dev/null 2>&1; then
         FIRST_JSON=$(echo "$FULL_OUTPUT" | jq -s '.[0]')
     else
-        # jq 失败时的备用方案
-        FIRST_JSON=$(echo "$FULL_OUTPUT" | awk '/^{/{flag=1} flag {print} /^}/{flag=0}' | head -n 5)
+        # jq 失败时的备用方案 - 只提取第一个完整的JSON对象
+        FIRST_JSON=$(echo "$FULL_OUTPUT" | awk '
+        BEGIN { brace_count = 0; in_json = 0; json_content = "" }
+        /^{/ {
+            if (!in_json) {
+                in_json = 1
+                json_content = $0
+                brace_count = 1
+                for (i = 1; i <= length($0); i++) {
+                    if (substr($0, i, 1) == "{") brace_count++
+                    if (substr($0, i, 1) == "}") brace_count--
+                }
+            } else {
+                json_content = json_content "\n" $0
+                for (i = 1; i <= length($0); i++) {
+                    if (substr($0, i, 1) == "{") brace_count++
+                    if (substr($0, i, 1) == "}") brace_count--
+                }
+                if (brace_count == 0) {
+                    print json_content
+                    exit
+                }
+            }
+        }
+        !/^{/ && in_json {
+            json_content = json_content "\n" $0
+            for (i = 1; i <= length($0); i++) {
+                if (substr($0, i, 1) == "{") brace_count++
+                if (substr($0, i, 1) == "}") brace_count--
+            }
+            if (brace_count == 0) {
+                print json_content
+                exit
+            }
+        }
+        ')
     fi
     echo "📋 第一个 JSON (发送确认):"
     echo "$FIRST_JSON" | jq -c '.' 2>/dev/null || echo "$FIRST_JSON"
