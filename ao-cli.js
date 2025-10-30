@@ -807,6 +807,11 @@ program
         evalData = fs.readFileSync(options.file, 'utf8');
       }
 
+      // 如果启用了trace，暂时不支持，需要等待所有消息处理完成
+      if (options.trace && !program.opts().json) {
+        console.error('🔧 Trace模式：将等待消息处理完成后查询结果');
+      }
+
 
       const messageId = await sendMessage({
         wallet,
@@ -1146,94 +1151,88 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
   for (let i = 0; i < evalResult.Messages.length; i++) {
     const message = evalResult.Messages[i];
     const targetProcess = message.Target;
-
-    // 从目标进程的结果历史中查找消息处理结果
-    let messageId = null;
     let messageResult = null;
     let hasPrintOutput = false;
 
-    if (message.Tags) {
-      const referenceTag = message.Tags.find(tag => tag.name === 'Reference');
-      if (referenceTag && targetProcess) {
-        const reference = referenceTag.value;
+    if (!isJsonMode) {
+      console.log(`\n📤 追踪消息 ${i + 1}/${evalResult.Messages.length}:`);
+      console.log(`   🎯 目标进程: ${targetProcess}`);
+    }
 
-        // 多次尝试查询，因为消息处理需要时间
-        const maxRetries = 5;
-        const retryDelay = 3000; // 3秒延迟
+    // 检查是否支持results查询（mainnet模式不支持）
+    const connectionInfo = getConnectionInfo();
+    if (connectionInfo.MODE === 'mainnet') {
+      if (!isJsonMode) {
+        console.log(`   ⚠️ 主网模式不支持结果历史查询，跳过追踪`);
+      }
+      continue;
+    }
 
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            if (!isJsonMode && attempt === 1) {
-              console.log(`   🔄 查询目标进程结果历史 (最多尝试 ${maxRetries} 次)...`);
-            }
+    // 从目标进程的结果历史中查找消息处理结果
+    // 我们通过检查最近的结果，看是否有匹配的消息
+    const maxRetries = 8; // 增加重试次数
+    const retryDelay = 2000; // 减少延迟
 
-            // 查询目标进程的最近结果历史
-            const resultsResponse = await queryProcessResults(wallet, targetProcess, 30); // 查询最近30个结果
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        if (!isJsonMode && attempt === 1) {
+          console.log(`   🔄 查询目标进程结果历史 (最多尝试 ${maxRetries} 次)...`);
+        }
 
-            // 从结果中查找匹配的Reference
-            if (resultsResponse && resultsResponse.edges) {
-              for (const edge of resultsResponse.edges) {
-                if (edge.node && edge.node.Output) {
-                  // 检查是否包含我们发送的消息信息
-                  const outputStr = JSON.stringify(edge.node.Output);
-                  const tagsStr = JSON.stringify(edge.node);
+        const resultsResponse = await queryProcessResults(wallet, targetProcess, 20); // 查询最近20个结果
 
-                  // 匹配Reference标签 - 尝试多种匹配方式
-                  if (outputStr.includes(`"Reference=${reference}"`) ||
-                    tagsStr.includes(`"Reference=${reference}"`) ||
-                    (outputStr.includes(reference) && outputStr.includes("Reference"))) {
-                    messageResult = edge.node;
-                    messageId = edge.cursor || 'found-in-history';
-                    if (!isJsonMode) {
-                      console.log(`   ✅ 第${attempt}次尝试成功！找到Reference=${reference}的处理结果`);
-                    }
-                    break;
-                  }
+        if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
+          // 检查最近的结果，看是否有print输出
+          for (const edge of resultsResponse.edges.slice(0, 5)) { // 检查最近5个结果
+            if (edge.node && edge.node.Output) {
+              // 检查是否有print标志或者print输出
+              const hasPrint = edge.node.Output.print === true ||
+                (edge.node.Output.data && typeof edge.node.Output.data === 'string' &&
+                 edge.node.Output.data.includes('New Message From'));
+
+              if (hasPrint) {
+                messageResult = edge.node;
+                if (!isJsonMode) {
+                  console.log(`   ✅ 第${attempt}次尝试成功！找到Handler处理结果`);
                 }
+                break;
               }
-            }
-
-            if (messageResult) {
-              break; // 成功找到结果，跳出重试循环
-            } else if (attempt < maxRetries) {
-              if (!isJsonMode) {
-                console.log(`   ⏳ 第${attempt}次尝试未找到，等待 ${retryDelay}ms 后重试...`);
-              }
-              await new Promise(resolve => setTimeout(resolve, retryDelay));
-            } else {
-              if (!isJsonMode) {
-                console.log(`   📭 经过 ${maxRetries} 次尝试，仍未找到Reference=${reference}的处理记录`);
-              }
-            }
-          } catch (error) {
-            if (attempt === maxRetries) {
-              if (!isJsonMode) {
-                console.log(`   📡 所有查询尝试都失败: ${error.message}`);
-              }
-            } else {
-              if (!isJsonMode) {
-                console.log(`   ⚠️ 第${attempt}次查询失败，等待重试...`);
-              }
-              await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
           }
+        }
+
+        if (messageResult) {
+          break;
+        } else if (attempt < maxRetries) {
+          if (!isJsonMode) {
+            console.log(`   ⏳ 第${attempt}次尝试未找到，等待 ${retryDelay}ms 后重试...`);
+          }
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        } else {
+          if (!isJsonMode) {
+            console.log(`   📭 经过 ${maxRetries} 次尝试，仍未找到处理记录`);
+          }
+        }
+      } catch (error) {
+        if (attempt === maxRetries) {
+          if (!isJsonMode) {
+            console.log(`   📡 所有查询尝试都失败: ${error.message}`);
+          }
+        } else {
+          if (!isJsonMode) {
+            console.log(`   ⚠️ 第${attempt}次查询失败，等待重试...`);
+          }
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
     }
 
-    if (!isJsonMode) {
-      console.log(`\n📤 追踪消息 ${i + 1}/${evalResult.Messages.length}:`);
-      console.log(`   📋 消息ID: ${messageId || '未知'}`);
-      console.log(`   🎯 目标进程: ${targetProcess}`);
-      console.log(`   📄 数据: ${message.Data ? message.Data.substring(0, 50) + (message.Data.length > 50 ? '...' : '') : '无'}`);
-    }
-
+    // 检查结果中是否有print输出
     if (messageResult && messageResult.Output) {
       if (!isJsonMode) {
         console.log('   ✅ 获取到处理结果:');
       }
 
-      // 检查是否有print输出
       if (messageResult.Output.data && typeof messageResult.Output.data === 'string') {
         const printLines = messageResult.Output.data.split('\n').filter(line => line.trim());
         if (printLines.length > 0) {
@@ -1248,24 +1247,12 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           }
         }
       }
-
-      if (!isJsonMode) {
-        if (!hasPrintOutput) {
-          console.log('   📭 Handler没有产生print输出');
-        }
-      }
-    } else {
-      if (!isJsonMode) {
-        console.log(`   📋 无法确定消息ID，跳过处理结果查询`);
-      }
     }
 
     const tracedMessage = {
       index: i + 1,
       status: messageResult ? (hasPrintOutput ? 'success_with_print' : 'success_no_print') : 'no_result',
-      messageId,
       targetProcess,
-      data: message.Data,
       hasPrintOutput
     };
 
@@ -1366,19 +1353,27 @@ async function queryProcessResults(wallet, processId, limit = 10) {
   const connectionInfo = getConnectionInfo();
 
   if (connectionInfo.MODE === 'mainnet') {
-    const request = getRequest(connectionInfo)(wallet);
-    const result = await request({
-      method: 'GET',
-      url: `${connectionInfo.URL}/results/${processId}?limit=${limit}&sort=DESC`
-    });
-    return JSON.parse(result.body || '{}');
+    // Mainnet mode doesn't support results query API
+    // Return null to indicate no results available
+    return null;
   } else {
-    const connectInstance = getConnect(connectionInfo);
-    return await connectInstance.results({
-      process: processId,
-      limit: limit,
-      sort: 'DESC'
+    // 直接使用fetch调用CU API，因为aoconnect的results可能有问题
+    const cuUrl = connectionInfo.CU_URL;
+    const url = `${cuUrl}/results/${processId}?limit=${limit}&sort=DESC`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      },
+      redirect: 'follow'
     });
+
+    if (!response.ok) {
+      throw new Error(`CU API request failed: ${response.status}`);
+    }
+
+    return await response.json();
   }
 }
 

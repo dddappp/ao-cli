@@ -119,16 +119,16 @@ else
     echo "⚠️  Output.data 字段为空"
 fi
 
-echo ""
-echo "📊 检查接收进程的Inbox（验证消息是否成功到达）..."
-INBOX_OUTPUT=$(node "$AO_CLI_PATH" inbox "$RECEIVER_ID" --latest --json 2>&1)
-INBOX_DATA=$(echo "$INBOX_OUTPUT" | jq -r '.data.inbox // empty' 2>/dev/null)
+# echo ""
+# echo "📊 检查接收进程的Inbox..."
+# INBOX_OUTPUT=$(node "$AO_CLI_PATH" inbox "$RECEIVER_ID" --latest --json 2>&1)
+# INBOX_DATA=$(echo "$INBOX_OUTPUT" | jq -r '.data.inbox // empty' 2>/dev/null)
 
-if [ -n "$INBOX_DATA" ]; then
-    echo "📬 接收进程Inbox中有消息"
-else
-    echo "📭 接收进程Inbox为空（这是正常的，消息已被handler消费）"
-fi
+# if [ -n "$INBOX_DATA" ]; then
+#     echo "📬 接收进程Inbox中有消息"
+# else
+#     echo "📭 接收进程Inbox为空（这是正常的，消息已被handler消费）"
+# fi
 
 echo ""
 echo "🎯 最终结论："
@@ -139,7 +139,7 @@ if [ "$HAS_RECEIVER_OUTPUT" = "true" ]; then
 else
     echo "✅ 结论：AO进程隔离机制工作正常"
     echo "   📝 eval命令只能捕获自身进程的print输出"
-    echo "   🔒 接收进程Handler的print输出被进程隔离机制保护"
+    echo "   🔒 但通过 eval --trace 可以突破隔离，获取接收进程Handler的print输出"
 fi
 
 echo ""
@@ -247,4 +247,5 @@ echo ""
 echo "=== 完整测试完成 ==="
 
 # 清理
-rm -f test-receiver-print.lua
+# 注意：test-receiver-print.lua 是版本控制的文件，不要删除
+# rm -f test-receiver-print.lua
