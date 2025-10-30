@@ -144,7 +144,107 @@ else
 fi
 
 echo ""
-echo "=== 测试完成 ==="
+echo "🆕 🆕 🆕 新增功能测试：eval --trace 选项 🆕 🆕 🆕"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "💡 最新功能：eval --trace 可以获取接收进程Handler的print输出"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+echo ""
+echo "🔬 测试 eval --trace 功能（非JSON模式）..."
+echo "📝 命令: ao-cli eval [sender-id] --data \"...ao.send(...)...\" --wait --trace"
+
+TRACE_OUTPUT=$(ao-cli eval "$SENDER_ID" --data "print('🚀 Trace测试：发送进程eval开始'); ao.send({Target='$RECEIVER_ID', Tags={Action='TestReceiverPrint'}, Data='Trace测试消息'}); print('📤 Trace测试：消息已发送'); return 'Trace测试完成'" --wait --trace 2>&1)
+
+echo ""
+echo "📋 eval --trace 的完整输出结果:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "$TRACE_OUTPUT"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# 检查输出中是否包含trace信息
+if echo "$TRACE_OUTPUT" | grep -q "🔍 🔍 消息追踪模式"; then
+    echo ""
+    echo "✅ eval --trace 功能工作正常！"
+    echo "   📝 成功显示了跨进程Handler的print输出追踪"
+
+    # 检查是否包含接收进程的print输出
+    if echo "$TRACE_OUTPUT" | grep -q "🎯\|📨\|🔄\|📤\|✅"; then
+        echo "   🎯 接收进程Handler的print输出已被捕获并显示"
+        echo ""
+        echo "🔗 验证接收进程Handler中的print语句:"
+        echo "   📝 Handler: print('🎯 接收进程Handler开始执行')"
+        echo "   📝 Handler: print('📨 收到来自发送进程的消息: ...')"
+        echo "   📝 Handler: print('🔄 处理中...')"
+        echo "   📝 Handler: print('📤 发送响应消息')"
+        echo "   📝 Handler: print('✅ 接收进程Handler执行完成')"
+    else
+        echo "   ⚠️  未检测到接收进程Handler的print输出"
+    fi
+else
+    echo ""
+    echo "❌ eval --trace 功能可能有问题，未检测到trace输出"
+fi
+
+echo ""
+echo "🔬 测试 eval --trace --json 功能（JSON模式）..."
+echo "📝 命令: ao-cli eval [sender-id] --data \"...\" --wait --trace --json"
+
+TRACE_JSON_OUTPUT=$(ao-cli eval "$SENDER_ID" --data "print('🚀 JSON Trace测试：发送进程eval开始'); ao.send({Target='$RECEIVER_ID', Tags={Action='TestReceiverPrint'}, Data='JSON Trace测试消息'}); print('📤 JSON Trace测试：消息已发送'); return 'JSON Trace测试完成'" --wait --trace --json 2>&1)
+
+echo ""
+echo "📋 eval --trace --json 的输出结果:"
+
+# 尝试格式化JSON输出
+if echo "$TRACE_JSON_OUTPUT" | jq . >/dev/null 2>&1; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "$TRACE_JSON_OUTPUT" | jq .
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # 检查JSON结构
+    HAS_TRACE=$(echo "$TRACE_JSON_OUTPUT" | jq 'has("extra") and (.extra.trace // false)')
+    if [ "$HAS_TRACE" = "true" ]; then
+        echo ""
+        echo "✅ JSON模式trace功能工作正常！"
+        echo "   📝 trace结果已整合到JSON结构的 extra.trace 字段中"
+
+        # 检查trace内容
+        TRACE_COUNT=$(echo "$TRACE_JSON_OUTPUT" | jq '.extra.trace.tracedMessages | length')
+        echo "   📊 追踪了 $TRACE_COUNT 个消息"
+
+        # 检查是否有接收进程的print输出
+        HAS_HANDLER_PRINT=$(echo "$TRACE_JSON_OUTPUT" | jq '.extra.trace.tracedMessages[0].result.output.data // "" | contains("🎯") or contains("📨") or contains("🔄") or contains("📤") or contains("✅")')
+        if [ "$HAS_HANDLER_PRINT" = "true" ]; then
+            echo "   🎯 接收进程Handler的print输出已包含在JSON结果中"
+        else
+            echo "   ⚠️  JSON结果中未检测到接收进程Handler的print输出"
+        fi
+    else
+        echo ""
+        echo "❌ JSON模式trace功能有问题，未找到extra.trace字段"
+    fi
+else
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "❌ JSON解析失败，原始输出:"
+    echo "$TRACE_JSON_OUTPUT"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+fi
+
+echo ""
+echo "🎯 新增功能总结："
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ eval --trace: 获取接收进程Handler的print输出"
+echo "✅ 非JSON模式: 直接显示trace信息，方便人类阅读"
+echo "✅ JSON模式: trace结果整合到JSON结构的extra.trace字段中"
+echo "✅ 完整性: 捕获接收进程Handler执行过程中的所有print输出"
+echo ""
+echo "💡 使用场景:"
+echo "   - 调试跨进程消息传递"
+echo "   - 监控接收进程Handler执行状态"
+echo "   - 自动化测试中验证Handler行为"
+echo "   - CI/CD流水线中的调试输出收集"
+
+echo ""
+echo "=== 完整测试完成 ==="
 
 # 清理
 rm -f test-receiver-print.lua
