@@ -15,7 +15,7 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 
 echo ""
 echo "📡 创建发送进程 (进程A)..."
-SENDER_ID=$(ao-cli spawn default --name "sender-$(date +%s)" --json 2>/dev/null | jq -r '.data.processId' 2>/dev/null)
+SENDER_ID=$(node ../ao-cli.js spawn default --name "sender-$(date +%s)" --json 2>/dev/null | jq -r '.data.processId' 2>/dev/null)
 if [ -z "$SENDER_ID" ]; then
     echo "❌ 发送进程创建失败"
     exit 1
@@ -24,7 +24,7 @@ echo "✅ 发送进程ID: $SENDER_ID"
 
 echo ""
 echo "📨 创建接收进程 (进程B)..."
-RECEIVER_ID=$(ao-cli spawn default --name "receiver-$(date +%s)" --json 2>/dev/null | jq -r '.data.processId' 2>/dev/null)
+RECEIVER_ID=$(node ../ao-cli.js spawn default --name "receiver-$(date +%s)" --json 2>/dev/null | jq -r '.data.processId' 2>/dev/null)
 if [ -z "$RECEIVER_ID" ]; then
     echo "❌ 接收进程创建失败"
     exit 1
@@ -34,9 +34,9 @@ echo "✅ 接收进程ID: $RECEIVER_ID"
 echo ""
 echo "🔧 为接收进程加载包含print的Handler..."
 # 先加载基础应用
-ao-cli load "$RECEIVER_ID" "tests/test-app.lua" --json 2>/dev/null >/dev/null
+node ../ao-cli.js load "$RECEIVER_ID" "tests/test-app.lua" --json 2>/dev/null >/dev/null
 # 再加载测试handler
-ao-cli load "$RECEIVER_ID" "test-receiver-print.lua" --json 2>/dev/null >/dev/null
+node ../ao-cli.js load "$RECEIVER_ID" "tests/test-receiver-print.lua" --json 2>/dev/null >/dev/null
 echo "✅ 接收进程Handler加载完成"
 
 echo ""
@@ -49,7 +49,7 @@ echo "📝 Eval命令内容:"
 echo "   $EVAL_COMMAND"
 echo ""
 
-EVAL_OUTPUT=$(ao-cli eval "$SENDER_ID" --data "$EVAL_COMMAND" --wait --json 2>&1)
+EVAL_OUTPUT=$(node ../ao-cli.js eval "$SENDER_ID" --data "$EVAL_COMMAND" --wait --json 2>&1)
 
 echo "📋 解析eval命令输出..."
 
@@ -157,7 +157,7 @@ fi
 
 echo ""
 echo "📊 检查接收进程的Inbox（验证消息是否成功到达）..."
-INBOX_OUTPUT=$(ao-cli inbox "$RECEIVER_ID" --latest --json 2>&1)
+INBOX_OUTPUT=$(node ../ao-cli.js inbox "$RECEIVER_ID" --latest --json 2>&1)
 INBOX_DATA=$(echo "$INBOX_OUTPUT" | jq -r '.data.inbox // empty' 2>/dev/null)
 
 if [ -n "$INBOX_DATA" ]; then
@@ -187,7 +187,7 @@ echo ""
 echo "🔬 测试 eval --trace 功能（非JSON模式）..."
 echo "📝 命令: ao-cli eval [sender-id] --data \"...ao.send(...)...\" --wait --trace"
 
-TRACE_OUTPUT=$(ao-cli eval "$SENDER_ID" --data "print('🚀 Trace测试：发送进程eval开始'); ao.send({Target='$RECEIVER_ID', Tags={Action='TestReceiverPrint'}, Data='Trace测试消息'}); print('📤 Trace测试：消息已发送'); return 'Trace测试完成'" --wait --trace 2>&1)
+TRACE_OUTPUT=$(node ../ao-cli.js eval "$SENDER_ID" --data "print('🚀 Trace测试：发送进程eval开始'); ao.send({Target='$RECEIVER_ID', Tags={Action='TestReceiverPrint'}, Data='Trace测试消息'}); print('📤 Trace测试：消息已发送'); return 'Trace测试完成'" --wait --trace 2>&1)
 
 echo ""
 echo "📋 eval --trace 的完整输出结果:"
@@ -223,7 +223,7 @@ echo ""
 echo "🔬 测试 eval --trace --json 功能（JSON模式）..."
 echo "📝 命令: ao-cli eval [sender-id] --data \"...\" --wait --trace --json"
 
-TRACE_JSON_OUTPUT=$(ao-cli eval "$SENDER_ID" --data "print('🚀 JSON Trace测试：发送进程eval开始'); ao.send({Target='$RECEIVER_ID', Tags={Action='TestReceiverPrint'}, Data='JSON Trace测试消息'}); print('📤 JSON Trace测试：消息已发送'); return 'JSON Trace测试完成'" --wait --trace --json 2>&1)
+TRACE_JSON_OUTPUT=$(node ../ao-cli.js eval "$SENDER_ID" --data "print('🚀 JSON Trace测试：发送进程eval开始'); ao.send({Target='$RECEIVER_ID', Tags={Action='TestReceiverPrint'}, Data='JSON Trace测试消息'}); print('📤 JSON Trace测试：消息已发送'); return 'JSON Trace测试完成'" --wait --trace --json 2>&1)
 
 echo ""
 echo "📋 eval --trace --json 的输出结果:"
