@@ -108,17 +108,23 @@ Handlers.add(
     end
 )
 
--- Default handler for unknown actions
+-- Test handler for cross-process print testing
 Handlers.add(
-    "UnknownAction",
+    "TestReceiverPrint",
+    Handlers.utils.hasMatchingTag("Action", "TestReceiverPrint"),
     function(msg)
-        return msg.Action ~= nil
-    end,
-    function(msg)
-        sendResponse(json.encode({
-            error = "Unknown action",
-            action = msg.Action,
-            data = msg.Data
-        }), { Action = "ErrorResponse" })
+        print('🎯 接收进程Handler开始执行')
+        print('📨 收到来自发送进程的消息: ' .. msg.Data)
+        print('🔄 处理中...')
+        print('📤 发送响应消息')
+        print('✅ 接收进程Handler执行完成')
+
+        ao.send({
+            Target = msg.From,
+            Tags = { Action = "ReceiverResponse" },
+            Data = "处理完成: " .. msg.Data
+        })
+
+        return "处理完成"
     end
 )

@@ -18,7 +18,6 @@
 | 文件             | 描述                                           |
 | ---------------- | ---------------------------------------------- |
 | **test-app.lua** | 一个简单的测试应用，演示如何处理消息和状态管理 |
-| **test-receiver-print.lua** | 跨进程Handler测试应用，演示接收进程中的print输出 |
 | token-test.lua   | Token 相关的 Lua 代码示例                      |
 
 ---
@@ -442,7 +441,7 @@ log_success "所有测试通过！"
 
 ### 测试文件
 - `cross-process-print-test.sh` - 跨进程 print 输出测试脚本
-- `test-receiver-print.lua` - 接收进程测试应用
+- `test-app.lua` - 包含跨进程Handler测试的应用
 
 ### 测试目的
 验证 `eval + Send` 方式下，接收进程 Handlers 中的 `print()` 输出是否可以被捕获。
@@ -508,7 +507,7 @@ ao-cli eval <process-id> --data "ao.send({...})" --wait --trace --json
 #### 实际示例
 ```bash
 # 创建接收进程并加载Handler
-ao-cli load <receiver-id> tests/test-receiver-print.lua
+ao-cli load <receiver-id> tests/test-app.lua
 
 # 使用trace功能发送消息并追踪Handler执行
 ao-cli eval <sender-id> \
@@ -650,7 +649,7 @@ ao-cli eval $MONITOR_PROCESS --data "
 ### 相关文件
 
 - `tests/cross-process-print-test.sh` - 完整的功能测试脚本
-- `tests/test-receiver-print.lua` - 测试用的接收进程Handler
+- `tests/test-app.lua` - 包含跨进程Handler测试的应用
 - `ao-cli.js` - trace功能的实现代码
 
 ---

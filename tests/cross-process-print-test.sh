@@ -39,10 +39,8 @@ echo "✅ 接收进程ID: $RECEIVER_ID"
 
 echo ""
 echo "🔧 为接收进程加载包含print的Handler..."
-# 先加载基础应用
-node "$AO_CLI_PATH" load "$RECEIVER_ID" "tests/test-app.lua" --json 2>/dev/null >/dev/null
-# 再加载测试handler
-node "$AO_CLI_PATH" load "$RECEIVER_ID" "tests/test-receiver-print.lua" --json 2>/dev/null >/dev/null
+echo "  加载应用和handler..."
+node "$AO_CLI_PATH" load "$RECEIVER_ID" "tests/test-app.lua" --wait
 echo "✅ 接收进程Handler加载完成"
 
 echo ""
@@ -246,6 +244,3 @@ echo "   - CI/CD流水线中的调试输出收集"
 echo ""
 echo "=== 完整测试完成 ==="
 
-# 清理
-# 注意：test-receiver-print.lua 是版本控制的文件，不要删除
-# rm -f test-receiver-print.lua
