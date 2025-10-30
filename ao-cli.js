@@ -306,9 +306,9 @@ function printFormattedResult(result, operationType, operationIndex) {
   }
 
   const hasContent = (formatted.Messages && formatted.Messages.length > 0) ||
-                    (formatted.Assignments && formatted.Assignments.length > 0) ||
-                    (formatted.Spawns && formatted.Spawns.length > 0) ||
-                    (formatted.Output && (formatted.Output.data || formatted.Output.prompt));
+    (formatted.Assignments && formatted.Assignments.length > 0) ||
+    (formatted.Spawns && formatted.Spawns.length > 0) ||
+    (formatted.Output && (formatted.Output.data || formatted.Output.prompt));
 
   if (!hasContent && !formatted.Error) {
     console.log(`✅ Operation completed successfully`);
@@ -832,19 +832,25 @@ program
           messageId
         });
 
-      if (program.opts().json) {
-        const formattedResult = formatResult(result);
-        const extra = {};
-        if (formattedResult.GasUsed) extra.gasUsed = formattedResult.GasUsed;
-        if (formattedResult.Error) extra.error = formattedResult.Error;
-        if (traceResult) {
-          extra.trace = traceResult;
+        // 如果启用了trace，显示发送消息的处理结果 (JSON模式下整合到结果中)
+        let traceResult = null;
+        if (options.trace) {
+          traceResult = await traceSentMessages(result, wallet, program.opts().json);
         }
-        console.log(createJsonOutput('eval', !formattedResult.Error, {
-          messageId,
-          processId,
-          result: formattedResult
-        }, formattedResult.Error, extra));
+
+        if (program.opts().json) {
+          const formattedResult = formatResult(result);
+          const extra = {};
+          if (formattedResult.GasUsed) extra.gasUsed = formattedResult.GasUsed;
+          if (formattedResult.Error) extra.error = formattedResult.Error;
+          if (traceResult) {
+            extra.trace = traceResult;
+          }
+          console.log(createJsonOutput('eval', !formattedResult.Error, {
+            messageId,
+            processId,
+            result: formattedResult
+          }, formattedResult.Error, extra));
         } else {
           printFormattedResult(result, 'eval', 0);
 
@@ -852,12 +858,6 @@ program
           if (options.trace) {
             await traceSentMessages(result, wallet, false);
           }
-        }
-
-        // 如果启用了trace，显示发送消息的处理结果 (JSON模式下整合到结果中)
-        let traceResult = null;
-        if (options.trace) {
-          traceResult = await traceSentMessages(result, wallet, program.opts().json);
         }
       }
 
@@ -1021,8 +1021,8 @@ program
             // If we got some data, we found messages
             if (inboxResult.Output && inboxResult.Output.data) {
               if (!program.opts().json) {
-          console.log('✅ Found messages in inbox!');
-        }
+                console.log('✅ Found messages in inbox!');
+              }
               break;
             }
 
@@ -1140,18 +1140,37 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false) {
 
   for (let i = 0; i < evalResult.Messages.length; i++) {
     const message = evalResult.Messages[i];
+    // 注意：从eval结果的Messages中，消息ID可能不在消息对象本身中
+    // 我们需要从AO网络查询消息结果，但这里我们暂时跳过
+    // TODO: 实现正确的消息ID获取机制
     const messageId = message.Id || message.id || message.messageId;
     const targetProcess = message.Target;
 
-    if (!messageId || !targetProcess) {
+    if (!targetProcess) {
       if (!isJsonMode) {
-        console.log(`⚠️  消息 ${i + 1}: 缺少消息ID或目标进程，跳过追踪`);
+        console.log(`⚠️  消息 ${i + 1}: 缺少目标进程，跳过追踪`);
       }
       tracedMessages.push({
         index: i + 1,
         status: 'skipped',
-        reason: 'Missing message ID or target process',
+        reason: 'Missing target process',
         messageId,
+        targetProcess
+      });
+      continue;
+    }
+
+    // 对于没有messageId的情况，我们暂时跳过
+    // 实际实现中需要从AO网络获取消息ID
+    if (!messageId) {
+      if (!isJsonMode) {
+        console.log(`⚠️  消息 ${i + 1}: 无法获取消息ID，跳过追踪`);
+      }
+      tracedMessages.push({
+        index: i + 1,
+        status: 'skipped',
+        reason: 'Cannot determine message ID',
+        messageId: null,
         targetProcess
       });
       continue;

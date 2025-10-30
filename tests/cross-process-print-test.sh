@@ -5,9 +5,15 @@
 # 结论：eval只能捕获自身代码的print输出，无法捕获接收进程Handler的print输出
 #
 # 使用方法：
-#   cd /path/to/ao-cli
 #   export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PROXY=socks5://127.0.0.1:1235
-#   ./tests/cross-process-print-test.sh
+#   /path/to/ao-cli/tests/cross-process-print-test.sh
+
+# 获取脚本所在目录的绝对路径
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# 确保ao-cli.js路径正确
+AO_CLI_PATH="$PROJECT_ROOT/ao-cli.js"
 
 echo "=== 测试跨进程：接收进程Handlers中的print输出 ==="
 echo "设置代理环境变量..."
@@ -15,7 +21,7 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 
 echo ""
 echo "📡 创建发送进程 (进程A)..."
-SENDER_ID=$(node ../ao-cli.js spawn default --name "sender-$(date +%s)" --json 2>/dev/null | jq -r '.data.processId' 2>/dev/null)
+SENDER_ID=$(node "$AO_CLI_PATH" spawn default --name "sender-$(date +%s)" --json 2>/dev/null | jq -r '.data.processId' 2>/dev/null)
 if [ -z "$SENDER_ID" ]; then
     echo "❌ 发送进程创建失败"
     exit 1
@@ -24,7 +30,7 @@ echo "✅ 发送进程ID: $SENDER_ID"
 
 echo ""
 echo "📨 创建接收进程 (进程B)..."
-RECEIVER_ID=$(node ../ao-cli.js spawn default --name "receiver-$(date +%s)" --json 2>/dev/null | jq -r '.data.processId' 2>/dev/null)
+RECEIVER_ID=$(node "$AO_CLI_PATH" spawn default --name "receiver-$(date +%s)" --json 2>/dev/null | jq -r '.data.processId' 2>/dev/null)
 if [ -z "$RECEIVER_ID" ]; then
     echo "❌ 接收进程创建失败"
     exit 1
