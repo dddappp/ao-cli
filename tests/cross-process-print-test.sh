@@ -212,8 +212,8 @@ if echo "$TRACE_JSON_ONLY" | jq . >/dev/null 2>&1; then
     echo "$TRACE_JSON_ONLY" | jq .
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # 检查JSON结构
-    HAS_TRACE=$(echo "$TRACE_JSON_ONLY" | jq 'has("trace")')
+    # 检查JSON结构 - 检查所有JSON对象中是否有trace字段
+    HAS_TRACE=$(echo "$TRACE_JSON_ONLY" | jq 'any(. != null; has("trace"))')
     if [ "$HAS_TRACE" = "true" ]; then
         echo ""
         echo "✅ JSON模式trace功能工作正常！"
@@ -232,7 +232,7 @@ if echo "$TRACE_JSON_ONLY" | jq . >/dev/null 2>&1; then
         fi
     else
         echo ""
-        echo "❌ JSON模式trace功能有问题，未找到extra.trace字段"
+        echo "❌ JSON模式trace功能有问题，未找到trace字段"
     fi
 else
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
