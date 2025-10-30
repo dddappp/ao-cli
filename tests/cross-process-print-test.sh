@@ -59,9 +59,12 @@ EVAL_OUTPUT=$(node "$AO_CLI_PATH" eval "$SENDER_ID" --data "$EVAL_COMMAND" --wai
 
 echo "📋 解析eval命令输出..."
 
+# 过滤掉警告信息，只保留JSON部分
+EVAL_JSON_ONLY=$(echo "$EVAL_OUTPUT" | grep -E '^\s*\{' || echo "")
+
 # 提取最后一个JSON对象（完整结果）
-if echo "$EVAL_OUTPUT" | jq -s '.' >/dev/null 2>&1; then
-    EVAL_JSON=$(echo "$EVAL_OUTPUT" | jq -s '.[-1]')
+if echo "$EVAL_JSON_ONLY" | jq -s '.' >/dev/null 2>&1; then
+    EVAL_JSON=$(echo "$EVAL_JSON_ONLY" | jq -s '.[-1]')
 else
     # 尝试手动提取最后一个JSON对象
     EVAL_JSON=$(echo "$EVAL_OUTPUT" | awk '
@@ -234,25 +237,28 @@ TRACE_JSON_OUTPUT=$(node "$AO_CLI_PATH" eval "$SENDER_ID" --data "print('🚀 JS
 echo ""
 echo "📋 eval --trace --json 的输出结果:"
 
+# 过滤掉警告信息，只保留JSON部分
+TRACE_JSON_ONLY=$(echo "$TRACE_JSON_OUTPUT" | grep -E '^\s*\{' || echo "")
+
 # 尝试格式化JSON输出
-if echo "$TRACE_JSON_OUTPUT" | jq . >/dev/null 2>&1; then
+if echo "$TRACE_JSON_ONLY" | jq . >/dev/null 2>&1; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "$TRACE_JSON_OUTPUT" | jq .
+    echo "$TRACE_JSON_ONLY" | jq .
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # 检查JSON结构
-    HAS_TRACE=$(echo "$TRACE_JSON_OUTPUT" | jq 'has("extra") and (.extra.trace // false)')
+    HAS_TRACE=$(echo "$TRACE_JSON_ONLY" | jq 'has("trace")')
     if [ "$HAS_TRACE" = "true" ]; then
         echo ""
         echo "✅ JSON模式trace功能工作正常！"
         echo "   📝 trace结果已整合到JSON结构的 extra.trace 字段中"
 
         # 检查trace内容
-        TRACE_COUNT=$(echo "$TRACE_JSON_OUTPUT" | jq '.extra.trace.tracedMessages | length')
+        TRACE_COUNT=$(echo "$TRACE_JSON_ONLY" | jq '.trace.tracedMessages | length')
         echo "   📊 追踪了 $TRACE_COUNT 个消息"
 
         # 检查是否有接收进程的print输出
-        HAS_HANDLER_PRINT=$(echo "$TRACE_JSON_OUTPUT" | jq '.extra.trace.tracedMessages[0].result.output.data // "" | contains("🎯") or contains("📨") or contains("🔄") or contains("📤") or contains("✅")')
+        HAS_HANDLER_PRINT=$(echo "$TRACE_JSON_ONLY" | jq '.trace.tracedMessages[0].result.output.data // "" | contains("🎯") or contains("📨") or contains("🔄") or contains("📤") or contains("✅")')
         if [ "$HAS_HANDLER_PRINT" = "true" ]; then
             echo "   🎯 接收进程Handler的print输出已包含在JSON结果中"
         else
@@ -266,6 +272,9 @@ else
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "❌ JSON解析失败，原始输出:"
     echo "$TRACE_JSON_OUTPUT"
+    echo ""
+    echo "过滤后的JSON内容:"
+    echo "$TRACE_JSON_ONLY"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 fi
 
