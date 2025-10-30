@@ -773,6 +773,7 @@ program
   .option('--trace', 'Trace sent messages for cross-process debugging')
   .action(async (processId, options) => {
     try {
+
       // Override environment with CLI options
       if (program.opts().gatewayUrl) process.env.GATEWAY_URL = program.opts().gatewayUrl;
       if (program.opts().cuUrl) process.env.CU_URL = program.opts().cuUrl;

@@ -57,9 +57,43 @@ echo "📋 解析eval命令输出..."
 if echo "$EVAL_OUTPUT" | jq -s '.' >/dev/null 2>&1; then
     EVAL_JSON=$(echo "$EVAL_OUTPUT" | jq -s '.[-1]')
 else
-    echo "❌ JSON解析失败"
-    echo "原始输出: $EVAL_OUTPUT"
-    exit 1
+    # 尝试手动提取最后一个JSON对象
+    EVAL_JSON=$(echo "$EVAL_OUTPUT" | awk '
+    BEGIN { json=""; brace_count=0; in_json=0 }
+    /^{/ {
+        if (!in_json) {
+            in_json=1
+            json=$0
+            brace_count=1
+            # 简单计算大括号
+            for(i=1;i<=length($0);i++) {
+                c=substr($0,i,1)
+                if(c=="{") brace_count++
+                if(c=="}") brace_count--
+            }
+        } else {
+            json=json"\n"$0
+            for(i=1;i<=length($0);i++) {
+                c=substr($0,i,1)
+                if(c=="{") brace_count++
+                if(c=="}") brace_count--
+            }
+        }
+        next
+    }
+    in_json && !/^{/ {
+        json=json"\n"$0
+        for(i=1;i<=length($0);i++) {
+            c=substr($0,i,1)
+            if(c=="{") brace_count++
+            if(c=="}") brace_count--
+        }
+        if(brace_count <= 0) {
+            print json
+            exit
+        }
+    }
+    ')
 fi
 
 echo ""
