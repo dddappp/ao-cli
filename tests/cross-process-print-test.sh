@@ -217,7 +217,7 @@ if echo "$TRACE_JSON_ONLY" | jq . >/dev/null 2>&1; then
     if [ "$HAS_TRACE" = "true" ]; then
         echo ""
         echo "✅ JSON模式trace功能工作正常！"
-        echo "   📝 trace结果已整合到JSON结构的 extra.trace 字段中"
+        echo "   📝 trace结果已整合到JSON结构的 trace 字段中"
 
         # 检查trace内容
         TRACE_COUNT=$(echo "$TRACE_JSON_ONLY" | jq '.trace.tracedMessages | length')
