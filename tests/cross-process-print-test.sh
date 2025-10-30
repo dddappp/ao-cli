@@ -107,10 +107,13 @@ if [ "$OUTPUT_DATA" != "N/A" ] && [ -n "$OUTPUT_DATA" ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "🔍 详细分析："
-    echo "   ✅ 发送进程(eval)中的print输出 → $(echo "$OUTPUT_DATA" | grep -c '🚀\|📤\|⏳')"
-    echo "   ❓ 接收进程(Handler)中的print输出 → $(echo "$OUTPUT_DATA" | grep -c '🎯\|📨\|🔄\|📤\|✅')"
+    echo "   ✅ 发送进程(eval)中的print输出 → $(echo "$OUTPUT_DATA" | grep -c '🚀\|⏳')"
+    echo "   ❓ 接收进程(Handler)中的print输出 → $(echo "$OUTPUT_DATA" | grep -c '🎯\|📨\|🔄\|✅')"
 
-    if echo "$OUTPUT_DATA" | grep -q "🎯\|📨\|🔄\|📤\|✅"; then
+    # 注意：📤 被两个进程使用，所以单独处理
+    HAS_RECEIVER_OUTPUT=$(echo "$OUTPUT_DATA" | grep -q "🎯\|📨\|🔄\|✅" && echo "true" || echo "false")
+
+    if [ "$HAS_RECEIVER_OUTPUT" = "true" ]; then
         echo ""
         echo "🚨 意外发现：接收进程Handler的print输出也被捕获了！"
         echo "   📝 这意味着跨进程的Handler print 输出可以被 eval 命令捕获"
@@ -144,7 +147,7 @@ fi
 echo ""
 echo "🎯 最终结论："
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-if echo "$OUTPUT_DATA" | grep -q "🎯\|📨\|🔄\|📤\|✅" 2>/dev/null; then
+if [ "$HAS_RECEIVER_OUTPUT" = "true" ]; then
     echo "🚨 结论：eval + Send 方式下，接收进程Handler的print输出可以被捕获！"
     echo "   📝 这是一个重要的发现，意味着跨进程调试成为可能"
 else
