@@ -5,21 +5,28 @@
 
 // Default AO network endpoints
 const DEFAULT_GATEWAY_URL = 'https://arweave.net';
+const DEFAULT_ARWEAVE_GRAPHQL_URL = 'https://arweave.net/graphql';
 const DEFAULT_ARWEAVE_HOST = 'arweave.net';
 const DEFAULT_CU_URL = 'https://cu.ao-testnet.xyz';
 const DEFAULT_MU_URL = 'https://mu.ao-testnet.xyz';
 const DEFAULT_MAINNET_URL = 'https://forward.computer';
 const DEFAULT_SCHEDULER_URL = 'https://scheduler.forward.computer';
 
+// Default AO network identifiers
+const DEFAULT_AUTHORITY = 'fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
+const DEFAULT_SCHEDULER_ID = '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA';
+const DEFAULT_AOS_MODULE = 'wal-fUK-YnB9Kp5mN8dgMsSqPSqiGx-0SvwFUSwpDBI';
+const LEGACY_MODULE_ID = 'ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s';
+
 // Setup environment BEFORE importing aoconnect - mimic AOS behavior
 process.env.GATEWAY_URL = process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL;
 process.env.CU_URL = process.env.CU_URL || DEFAULT_CU_URL;
 process.env.MU_URL = process.env.MU_URL || DEFAULT_MU_URL;
 
-process.env.ARWEAVE_GRAPHQL = process.env.ARWEAVE_GRAPHQL || 'https://arweave.net/graphql';
+process.env.ARWEAVE_GRAPHQL = process.env.ARWEAVE_GRAPHQL || DEFAULT_ARWEAVE_GRAPHQL_URL;
 // Don't set AO_URL default - only set when explicitly requested
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-process.env.AUTHORITY = process.env.AUTHORITY || 'fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
+process.env.AUTHORITY = process.env.AUTHORITY || DEFAULT_AUTHORITY;
 
 process.env.DEBUG = 'false';
 process.env.NODE_ENV = 'development';
@@ -409,7 +416,7 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
         // Don't output in JSON mode
       } catch (e) {
         console.error('⚠️ Failed to auto-detect scheduler, using default');
-        scheduler = '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA';
+        scheduler = DEFAULT_SCHEDULER_ID;
       }
     }
 
@@ -423,11 +430,11 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
           const response = await fetch(connectionInfo.URL + '/~meta@1.0/info/address');
           authority = await response.text();
         }
-        authority = authority + ',fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
+        authority = authority + ',' + DEFAULT_AUTHORITY;
         // Don't output in JSON mode
       } catch (e) {
         console.error('⚠️ Failed to auto-detect authority, using default');
-        authority = 'fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
+        authority = DEFAULT_AUTHORITY;
       }
     }
 
@@ -436,7 +443,7 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
     let finalModule = moduleId;
     if (executionDevice === 'lua@5.3a') {
       // Use hyper module for lua@5.3a execution device (like AOS)
-      finalModule = process.env.AOS_MODULE || 'wal-fUK-YnB9Kp5mN8dgMsSqPSqiGx-0SvwFUSwpDBI';
+      finalModule = process.env.AOS_MODULE || DEFAULT_AOS_MODULE;
     }
 
     const spawnParams = {
@@ -482,7 +489,7 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
 
     const spawnParams = {
       module: moduleId,
-      scheduler: scheduler || process.env.SCHEDULER || '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA',
+      scheduler: scheduler || process.env.SCHEDULER || DEFAULT_SCHEDULER_ID,
       signer,
       tags,
       data: data || ''
@@ -712,7 +719,7 @@ program
 
       // Default module IDs (same as AOS)
       const LEGACY_MODULE_ID = 'ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s';
-      const HYPER_MODULE_ID = 'wal-fUK-YnB9Kp5mN8dgMsSqPSqiGx-0SvwFUSwpDBI';
+      const HYPER_MODULE_ID = DEFAULT_AOS_MODULE;
 
       const actualModuleId = options.hyper ? HYPER_MODULE_ID : (moduleId === 'default' ? LEGACY_MODULE_ID : moduleId);
 
