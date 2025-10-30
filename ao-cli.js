@@ -831,28 +831,32 @@ program
           messageId
         });
 
-        if (program.opts().json) {
-          const formattedResult = formatResult(result);
-          const extra = {};
-          if (formattedResult.GasUsed) extra.gasUsed = formattedResult.GasUsed;
-          if (formattedResult.Error) extra.error = formattedResult.Error;
-          console.log(createJsonOutput('eval', !formattedResult.Error, {
-            messageId,
-            processId,
-            result: formattedResult
-          }, formattedResult.Error, extra));
+      if (program.opts().json) {
+        const formattedResult = formatResult(result);
+        const extra = {};
+        if (formattedResult.GasUsed) extra.gasUsed = formattedResult.GasUsed;
+        if (formattedResult.Error) extra.error = formattedResult.Error;
+        if (traceResult) {
+          extra.trace = traceResult;
+        }
+        console.log(createJsonOutput('eval', !formattedResult.Error, {
+          messageId,
+          processId,
+          result: formattedResult
+        }, formattedResult.Error, extra));
         } else {
           printFormattedResult(result, 'eval', 0);
 
           // 如果启用了trace，显示发送消息的处理结果
           if (options.trace) {
-            await traceSentMessages(result, wallet);
+            await traceSentMessages(result, wallet, false);
           }
         }
 
-        // 如果启用了trace，显示发送消息的处理结果 (JSON模式下也支持)
+        // 如果启用了trace，显示发送消息的处理结果 (JSON模式下整合到结果中)
+        let traceResult = null;
         if (options.trace) {
-          await traceSentMessages(result, wallet);
+          traceResult = await traceSentMessages(result, wallet, program.opts().json);
         }
       }
 
@@ -1117,15 +1121,21 @@ program
   });
 
 // 追踪发送消息的处理结果，用于显示接收进程Handler中的print输出
-async function traceSentMessages(evalResult, wallet) {
+async function traceSentMessages(evalResult, wallet, isJsonMode = false) {
   if (!evalResult || !evalResult.Messages || evalResult.Messages.length === 0) {
-    console.log('ℹ️  Eval执行没有发送任何消息，无需追踪');
-    return;
+    if (!isJsonMode) {
+      console.log('ℹ️  Eval执行没有发送任何消息，无需追踪');
+    }
+    return { tracedMessages: [], summary: 'No messages sent' };
   }
 
-  console.log('');
-  console.log('🔍 🔍 消息追踪模式：显示接收进程Handler的print输出 🔍 🔍');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  const tracedMessages = [];
+
+  if (!isJsonMode) {
+    console.log('');
+    console.log('🔍 🔍 消息追踪模式：显示接收进程Handler的print输出 🔍 🔍');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  }
 
   for (let i = 0; i < evalResult.Messages.length; i++) {
     const message = evalResult.Messages[i];
@@ -1133,14 +1143,25 @@ async function traceSentMessages(evalResult, wallet) {
     const targetProcess = message.Target;
 
     if (!messageId || !targetProcess) {
-      console.log(`⚠️  消息 ${i + 1}: 缺少消息ID或目标进程，跳过追踪`);
+      if (!isJsonMode) {
+        console.log(`⚠️  消息 ${i + 1}: 缺少消息ID或目标进程，跳过追踪`);
+      }
+      tracedMessages.push({
+        index: i + 1,
+        status: 'skipped',
+        reason: 'Missing message ID or target process',
+        messageId,
+        targetProcess
+      });
       continue;
     }
 
-    console.log(`\n📤 追踪消息 ${i + 1}/${evalResult.Messages.length}:`);
-    console.log(`   📋 消息ID: ${messageId}`);
-    console.log(`   🎯 目标进程: ${targetProcess}`);
-    console.log(`   📄 数据: ${message.Data ? message.Data.substring(0, 50) + (message.Data.length > 50 ? '...' : '') : '无'}`);
+    if (!isJsonMode) {
+      console.log(`\n📤 追踪消息 ${i + 1}/${evalResult.Messages.length}:`);
+      console.log(`   📋 消息ID: ${messageId}`);
+      console.log(`   🎯 目标进程: ${targetProcess}`);
+      console.log(`   📄 数据: ${message.Data ? message.Data.substring(0, 50) + (message.Data.length > 50 ? '...' : '') : '无'}`);
+    }
 
     try {
       // 使用AO connect的result API获取消息处理结果
@@ -1167,46 +1188,92 @@ async function traceSentMessages(evalResult, wallet) {
       }
 
       if (messageResult && messageResult.Output) {
-        console.log('   ✅ 接收进程处理结果:');
+        if (!isJsonMode) {
+          console.log('   ✅ 接收进程处理结果:');
+        }
+
+        const tracedMessage = {
+          index: i + 1,
+          status: 'success',
+          messageId,
+          targetProcess,
+          data: message.Data,
+          result: {
+            output: messageResult.Output,
+            error: messageResult.Error
+          }
+        };
+        tracedMessages.push(tracedMessage);
 
         // 显示print输出
         if (messageResult.Output.data) {
-          console.log('   📝 Handler中的print输出:');
-          console.log('   ┌─────────────────────────────────────────────────────────────┐');
+          if (!isJsonMode) {
+            console.log('   📝 Handler中的print输出:');
+            console.log('   ┌─────────────────────────────────────────────────────────────┐');
 
-          // 格式化显示print输出
-          const printLines = messageResult.Output.data.split('\n');
-          printLines.forEach((line, idx) => {
-            if (line.trim()) {
-              console.log(`   │ ${line}`);
-            }
-          });
+            // 格式化显示print输出
+            const printLines = messageResult.Output.data.split('\n');
+            printLines.forEach((line, idx) => {
+              if (line.trim()) {
+                console.log(`   │ ${line}`);
+              }
+            });
 
-          console.log('   └─────────────────────────────────────────────────────────────┘');
+            console.log('   └─────────────────────────────────────────────────────────────┘');
+          }
         } else {
-          console.log('   📭 Handler没有产生print输出');
+          if (!isJsonMode) {
+            console.log('   📭 Handler没有产生print输出');
+          }
         }
 
         // 显示其他结果信息
-        if (messageResult.Output.prompt) {
-          console.log(`   💻 Prompt: ${messageResult.Output.prompt}`);
-        }
+        if (!isJsonMode) {
+          if (messageResult.Output.prompt) {
+            console.log(`   💻 Prompt: ${messageResult.Output.prompt}`);
+          }
 
-        if (messageResult.Error) {
-          console.log(`   ❌ 处理错误: ${messageResult.Error}`);
+          if (messageResult.Error) {
+            console.log(`   ❌ 处理错误: ${messageResult.Error}`);
+          }
         }
 
       } else {
-        console.log('   ⚠️  无法获取消息处理结果');
+        if (!isJsonMode) {
+          console.log('   ⚠️  无法获取消息处理结果');
+        }
+        tracedMessages.push({
+          index: i + 1,
+          status: 'no_result',
+          messageId,
+          targetProcess,
+          error: 'Unable to fetch message result'
+        });
       }
 
     } catch (error) {
-      console.log(`   ❌ 追踪失败: ${error.message}`);
+      if (!isJsonMode) {
+        console.log(`   ❌ 追踪失败: ${error.message}`);
+      }
+      tracedMessages.push({
+        index: i + 1,
+        status: 'error',
+        messageId,
+        targetProcess,
+        error: error.message
+      });
     }
   }
 
-  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('✅ 消息追踪完成');
+  if (!isJsonMode) {
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('✅ 消息追踪完成');
+  }
+
+  return {
+    tracedMessages,
+    summary: `Traced ${tracedMessages.length} messages`
+  };
 }
 
 // Parse CLI arguments
