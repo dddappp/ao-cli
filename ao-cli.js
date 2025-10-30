@@ -770,6 +770,7 @@ program
   .option('-d, --data <data>', 'Lua code to execute')
   .option('-t, --tag <tags...>', 'Additional tags in format name=value')
   .option('-w, --wait', 'Wait for result after sending message')
+  .option('--trace', 'Trace sent messages for cross-process debugging')
   .action(async (processId, options) => {
     try {
       // Override environment with CLI options
@@ -842,6 +843,16 @@ program
           }, formattedResult.Error, extra));
         } else {
           printFormattedResult(result, 'eval', 0);
+
+          // 如果启用了trace，显示发送消息的处理结果
+          if (options.trace) {
+            await traceSentMessages(result, wallet);
+          }
+        }
+
+        // 如果启用了trace，显示发送消息的处理结果 (JSON模式下也支持)
+        if (options.trace) {
+          await traceSentMessages(result, wallet);
         }
       }
 
@@ -1104,6 +1115,99 @@ program
       process.exit(1);
     }
   });
+
+// 追踪发送消息的处理结果，用于显示接收进程Handler中的print输出
+async function traceSentMessages(evalResult, wallet) {
+  if (!evalResult || !evalResult.Messages || evalResult.Messages.length === 0) {
+    console.log('ℹ️  Eval执行没有发送任何消息，无需追踪');
+    return;
+  }
+
+  console.log('');
+  console.log('🔍 🔍 消息追踪模式：显示接收进程Handler的print输出 🔍 🔍');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  for (let i = 0; i < evalResult.Messages.length; i++) {
+    const message = evalResult.Messages[i];
+    const messageId = message.Id || message.id || message.messageId;
+    const targetProcess = message.Target;
+
+    if (!messageId || !targetProcess) {
+      console.log(`⚠️  消息 ${i + 1}: 缺少消息ID或目标进程，跳过追踪`);
+      continue;
+    }
+
+    console.log(`\n📤 追踪消息 ${i + 1}/${evalResult.Messages.length}:`);
+    console.log(`   📋 消息ID: ${messageId}`);
+    console.log(`   🎯 目标进程: ${targetProcess}`);
+    console.log(`   📄 数据: ${message.Data ? message.Data.substring(0, 50) + (message.Data.length > 50 ? '...' : '') : '无'}`);
+
+    try {
+      // 使用AO connect的result API获取消息处理结果
+      const connectionInfo = getConnectionInfo();
+      const connect = getConnect(connectionInfo);
+
+      let messageResult;
+      if (connectionInfo.MODE === 'mainnet') {
+        // Mainnet mode - different result retrieval
+        const request = getRequest(connectionInfo);
+        const result = await request({
+          method: 'GET',
+          url: `${connectionInfo.URL}/result/${messageId}?process-id=${targetProcess}`
+        });
+        const body = JSON.parse(result.body || '{}');
+        const results = body.results || [];
+        messageResult = results.length > 0 ? results[0] : { Error: 'No results found' };
+      } else {
+        // Legacy/Testnet mode
+        messageResult = await connect.result({
+          process: targetProcess,
+          message: messageId
+        });
+      }
+
+      if (messageResult && messageResult.Output) {
+        console.log('   ✅ 接收进程处理结果:');
+
+        // 显示print输出
+        if (messageResult.Output.data) {
+          console.log('   📝 Handler中的print输出:');
+          console.log('   ┌─────────────────────────────────────────────────────────────┐');
+
+          // 格式化显示print输出
+          const printLines = messageResult.Output.data.split('\n');
+          printLines.forEach((line, idx) => {
+            if (line.trim()) {
+              console.log(`   │ ${line}`);
+            }
+          });
+
+          console.log('   └─────────────────────────────────────────────────────────────┘');
+        } else {
+          console.log('   📭 Handler没有产生print输出');
+        }
+
+        // 显示其他结果信息
+        if (messageResult.Output.prompt) {
+          console.log(`   💻 Prompt: ${messageResult.Output.prompt}`);
+        }
+
+        if (messageResult.Error) {
+          console.log(`   ❌ 处理错误: ${messageResult.Error}`);
+        }
+
+      } else {
+        console.log('   ⚠️  无法获取消息处理结果');
+      }
+
+    } catch (error) {
+      console.log(`   ❌ 追踪失败: ${error.message}`);
+    }
+  }
+
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('✅ 消息追踪完成');
+}
 
 // Parse CLI arguments
 program.parse();
