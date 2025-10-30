@@ -3,10 +3,18 @@
 // AO CLI - Universal Non-REPL AO Command Line Interface
 // A comprehensive tool for interacting with any AO dApp, replacing AOS REPL for automation and testing
 
+// Default AO network endpoints
+const DEFAULT_GATEWAY_URL = 'https://arweave.net';
+const DEFAULT_ARWEAVE_HOST = 'arweave.net';
+const DEFAULT_CU_URL = 'https://cu.ao-testnet.xyz';
+const DEFAULT_MU_URL = 'https://mu.ao-testnet.xyz';
+const DEFAULT_MAINNET_URL = 'https://forward.computer';
+const DEFAULT_SCHEDULER_URL = 'https://scheduler.forward.computer';
+
 // Setup environment BEFORE importing aoconnect - mimic AOS behavior
-process.env.GATEWAY_URL = process.env.GATEWAY_URL || 'https://arweave.net';
-process.env.CU_URL = process.env.CU_URL || 'https://cu.ao-testnet.xyz';
-process.env.MU_URL = process.env.MU_URL || 'https://mu.ao-testnet.xyz';
+process.env.GATEWAY_URL = process.env.GATEWAY_URL || DEFAULT_GATEWAY_URL;
+process.env.CU_URL = process.env.CU_URL || DEFAULT_CU_URL;
+process.env.MU_URL = process.env.MU_URL || DEFAULT_MU_URL;
 
 process.env.ARWEAVE_GRAPHQL = process.env.ARWEAVE_GRAPHQL || 'https://arweave.net/graphql';
 // Don't set AO_URL default - only set when explicitly requested
@@ -179,7 +187,7 @@ const Arweave = require('arweave');
 
 // Initialize Arweave
 const arweave = Arweave.init({
-  host: 'arweave.net',
+  host: DEFAULT_ARWEAVE_HOST,
   port: 443,
   protocol: 'https'
 });
@@ -392,8 +400,8 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
     let scheduler = process.env.SCHEDULER;
     if (!scheduler) {
       let schedulerUrl = connectionInfo.URL;
-      if (schedulerUrl === 'https://forward.computer') {
-        schedulerUrl = 'https://scheduler.forward.computer';
+      if (schedulerUrl === DEFAULT_MAINNET_URL) {
+        schedulerUrl = DEFAULT_SCHEDULER_URL;
       }
       try {
         const response = await fetch(schedulerUrl + '/~meta@1.0/info/address');
@@ -409,7 +417,7 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
     let authority = process.env.AUTHORITY;
     if (!authority) {
       try {
-        if (connectionInfo.URL === 'https://forward.computer') {
+        if (connectionInfo.URL === DEFAULT_MAINNET_URL) {
           authority = "QWg43UIcJhkdZq6ourr1VbnkwcP762Lppd569bKWYKY";
         } else {
           const response = await fetch(connectionInfo.URL + '/~meta@1.0/info/address');
@@ -647,7 +655,7 @@ program
   .option('--mu-url <url>', 'Messenger Unit URL')
   .option('--scheduler <id>', 'Scheduler ID')
   .option('--proxy <url>', 'Proxy URL for HTTPS/HTTP/ALL_PROXY')
-  .option('--mainnet [url]', 'Enable mainnet mode (uses https://forward.computer if no URL provided)')
+  .option('--mainnet [url]', `Enable mainnet mode (uses ${DEFAULT_MAINNET_URL} if no URL provided)`)
   .option('--url <url>', 'Set AO URL (hidden parameter for AOS compatibility)')
   .option('--json', 'Output results in JSON format for automation and scripting');
 
@@ -1188,7 +1196,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
               // 检查是否有print标志或者print输出
               const hasPrint = edge.node.Output.print === true ||
                 (edge.node.Output.data && typeof edge.node.Output.data === 'string' &&
-                 edge.node.Output.data.includes('New Message From'));
+                  edge.node.Output.data.includes('New Message From'));
 
               if (hasPrint) {
                 messageResult = edge.node;
@@ -1405,7 +1413,7 @@ function getConnectionInfo() {
 
     // If --mainnet is provided without URL (true), use default mainnet URL
     if (cliMainnet === true) {
-      finalUrl = 'https://forward.computer';
+      finalUrl = DEFAULT_MAINNET_URL;
     }
 
     console.error('🌐 Using Mainnet mode with AO URL:', finalUrl);
@@ -1422,8 +1430,8 @@ function getConnectionInfo() {
     return {
       MODE: 'legacy',
       GATEWAY_URL: process.env.GATEWAY_URL,
-      CU_URL: process.env.CU_URL || 'https://cu.ao-testnet.xyz',
-      MU_URL: process.env.MU_URL || 'https://mu.ao-testnet.xyz'
+      CU_URL: process.env.CU_URL || DEFAULT_CU_URL,
+      MU_URL: process.env.MU_URL || DEFAULT_MU_URL
     };
   }
 }
