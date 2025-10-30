@@ -49,7 +49,7 @@ echo ""
 echo "🧪 在发送进程中使用 eval + Send 向接收进程发送消息..."
 echo "⚠️  关键测试：eval命令能否捕获接收进程中Handler的print输出？"
 
-EVAL_COMMAND="print('🚀 发送进程eval开始'); ao.send({Target='$RECEIVER_ID', Tags={Action='TestReceiverPrint'}, Data='来自发送进程的测试消息'}); print('📤 消息已发送到接收进程'); print('⏳ 等待接收进程处理...'); return '发送完成'"
+EVAL_COMMAND="print('🚀 发送进程eval开始'); ao.send({Target=\"$RECEIVER_ID\", Tags={Action=\"TestReceiverPrint\"}, Data=\"来自发送进程的测试消息\"}); print('📤 消息已发送到接收进程'); print('⏳ 等待接收进程处理...'); return '发送完成'"
 
 echo "📝 Eval命令内容:"
 echo "   $EVAL_COMMAND"
@@ -59,50 +59,16 @@ EVAL_OUTPUT=$(node "$AO_CLI_PATH" eval "$SENDER_ID" --data "$EVAL_COMMAND" --wai
 
 echo "📋 解析eval命令输出..."
 
-# 过滤掉警告信息，只保留JSON部分
-EVAL_JSON_ONLY=$(echo "$EVAL_OUTPUT" | grep -E '^\s*\{' || echo "")
+# 过滤掉警告信息，只保留JSON部分（参考run-tests.sh的方法）
+EVAL_JSON_ONLY=$(echo "$EVAL_OUTPUT" | awk '/^{/{flag=1} flag {print} /^}/{flag=0}')
 
 # 提取最后一个JSON对象（完整结果）
 if echo "$EVAL_JSON_ONLY" | jq -s '.' >/dev/null 2>&1; then
     EVAL_JSON=$(echo "$EVAL_JSON_ONLY" | jq -s '.[-1]')
 else
-    # 尝试手动提取最后一个JSON对象
-    EVAL_JSON=$(echo "$EVAL_OUTPUT" | awk '
-    BEGIN { json=""; brace_count=0; in_json=0 }
-    /^{/ {
-        if (!in_json) {
-            in_json=1
-            json=$0
-            brace_count=1
-            # 简单计算大括号
-            for(i=1;i<=length($0);i++) {
-                c=substr($0,i,1)
-                if(c=="{") brace_count++
-                if(c=="}") brace_count--
-            }
-        } else {
-            json=json"\n"$0
-            for(i=1;i<=length($0);i++) {
-                c=substr($0,i,1)
-                if(c=="{") brace_count++
-                if(c=="}") brace_count--
-            }
-        }
-        next
-    }
-    in_json && !/^{/ {
-        json=json"\n"$0
-        for(i=1;i<=length($0);i++) {
-            c=substr($0,i,1)
-            if(c=="{") brace_count++
-            if(c=="}") brace_count--
-        }
-        if(brace_count <= 0) {
-            print json
-            exit
-        }
-    }
-    ')
+    echo "❌ JSON解析失败"
+    echo "过滤后的内容: $EVAL_JSON_ONLY"
+    exit 1
 fi
 
 echo ""
@@ -237,8 +203,8 @@ TRACE_JSON_OUTPUT=$(node "$AO_CLI_PATH" eval "$SENDER_ID" --data "print('🚀 JS
 echo ""
 echo "📋 eval --trace --json 的输出结果:"
 
-# 过滤掉警告信息，只保留JSON部分
-TRACE_JSON_ONLY=$(echo "$TRACE_JSON_OUTPUT" | grep -E '^\s*\{' || echo "")
+# 过滤掉警告信息，只保留JSON部分（参考run-tests.sh的方法）
+TRACE_JSON_ONLY=$(echo "$TRACE_JSON_OUTPUT" | awk '/^{/{flag=1} flag {print} /^}/{flag=0}')
 
 # 尝试格式化JSON输出
 if echo "$TRACE_JSON_ONLY" | jq . >/dev/null 2>&1; then
