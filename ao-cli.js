@@ -14,6 +14,8 @@ const DEFAULT_SCHEDULER_URL = 'https://scheduler.forward.computer';
 
 // Default AO network identifiers
 const DEFAULT_AUTHORITY = 'fcoN_xJeisVsPXA-trzVAuIiqO3ydLQxM-L4XbrQKzY';
+// Authority ID for forward.computer mainnet (same as AOS)
+const FORWARD_COMPUTER_AUTHORITY = 'QWg43UIcJhkdZq6ourr1VbnkwcP762Lppd569bKWYKY';
 const DEFAULT_SCHEDULER_ID = '_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA';
 const DEFAULT_AOS_MODULE = 'wal-fUK-YnB9Kp5mN8dgMsSqPSqiGx-0SvwFUSwpDBI';
 const LEGACY_MODULE_ID = 'ISShJH1ij-hPPt9St5UFFr_8Ys3Kj5cyg7zrMGt7H9s';
@@ -425,7 +427,7 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
     if (!authority) {
       try {
         if (connectionInfo.URL === DEFAULT_MAINNET_URL) {
-          authority = "QWg43UIcJhkdZq6ourr1VbnkwcP762Lppd569bKWYKY";
+          authority = FORWARD_COMPUTER_AUTHORITY;
         } else {
           const response = await fetch(connectionInfo.URL + '/~meta@1.0/info/address');
           authority = await response.text();
