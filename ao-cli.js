@@ -519,6 +519,14 @@ async function sendMessage({ wallet, processId, action, data, tags = [], props =
     // Mainnet mode - use same approach as AOS
     const { createSigner } = require('@permaweb/aoconnect');
 
+    // Combine tags and props for HTTP request
+    // Props are treated as additional tags to maintain original case
+    const allTags = [
+      { name: 'Action', value: action },
+      ...tags,
+      ...props
+    ];
+
     const messageParams = {
       type: 'Message',
       path: `/${processId}/push`,
@@ -528,10 +536,8 @@ async function sendMessage({ wallet, processId, action, data, tags = [], props =
       'signing-format': 'ANS-104',
       accept: 'application/json',
       action: action,
-      // Tags are converted to lowercase properties
-      ...tags.reduce((a, t) => ({ ...a, [t.name.toLowerCase()]: t.value }), {}),
-      // Props maintain original case as they are direct message properties
-      ...props.reduce((a, p) => ({ ...a, [p.name]: p.value }), {}),
+      // All tags (including props) are converted to lowercase properties for HTTP request
+      ...allTags.reduce((a, t) => ({ ...a, [t.name.toLowerCase()]: t.value }), {}),
       data: data || ''
     };
 
@@ -594,19 +600,22 @@ async function sendMessage({ wallet, processId, action, data, tags = [], props =
     return messageId;
 
   } else {
-    // Legacy/Testnet mode - original implementation
+    // Legacy/Testnet mode - use aoconnect message function
     const signer = createDataItemSigner(wallet);
+
+    // Combine tags and props for aoconnect message function
+    // Props are treated as additional tags to maintain original case
+    const allTags = [
+      { name: 'Action', value: action },
+      ...tags,
+      ...props
+    ];
 
     const messageParams = {
       process: processId,
-      signer,
-      tags: [
-        { name: 'Action', value: action },
-        ...tags,
-        // Props are added as tags but maintain original case
-        ...props
-      ],
-      data: data || ''
+      data: data || '',
+      tags: allTags,
+      signer
     };
 
     // In JSON mode, don't output progress information
