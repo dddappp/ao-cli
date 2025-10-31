@@ -119,6 +119,9 @@ ao-cli message <process-id> TestMessage --data '{"key": "value"}' --wait
 
 # Send without waiting
 ao-cli message <process-id> TestMessage --data "hello"
+
+# Send token transfer with direct properties (for contracts that read msg.Recipient, msg.Quantity)
+ao-cli message <token-process-id> Transfer --prop Recipient=<target-address> --prop Quantity=100 --wait
 ```
 
 > **注意**：如果进程ID以 `-` 开头，您可以使用以下任一种方法：
@@ -390,8 +393,9 @@ Evaluate Lua code.
 Send a message to a process.
 
 **Options:**
-- `--data <json>`: Message data
-- `--tags <json>`: Additional tags
+- `--data <data>`: Message data (JSON string or plain text)
+- `--tag <tags...>`: Additional tags in format name=value
+- `--prop <props...>`: Message properties (direct attributes) in format name=value
 - `--wait`: Wait for result
 
 ### `inbox <processId> [options]`

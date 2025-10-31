@@ -511,7 +511,7 @@ async function spawnProcess({ wallet, moduleId, tags, data, scheduler }) {
   }
 }
 
-async function sendMessage({ wallet, processId, action, data, tags = [] }) {
+async function sendMessage({ wallet, processId, action, data, tags = [], props = [] }) {
   const connectionInfo = getConnectionInfo();
   const isMainnet = connectionInfo.MODE === 'mainnet';
 
@@ -528,7 +528,10 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
       'signing-format': 'ANS-104',
       accept: 'application/json',
       action: action,
+      // Tags are converted to lowercase properties
       ...tags.reduce((a, t) => ({ ...a, [t.name.toLowerCase()]: t.value }), {}),
+      // Props maintain original case as they are direct message properties
+      ...props.reduce((a, p) => ({ ...a, [p.name]: p.value }), {}),
       data: data || ''
     };
 
@@ -599,7 +602,9 @@ async function sendMessage({ wallet, processId, action, data, tags = [] }) {
       signer,
       tags: [
         { name: 'Action', value: action },
-        ...tags
+        ...tags,
+        // Props are added as tags but maintain original case
+        ...props
       ],
       data: data || ''
     };
@@ -900,6 +905,7 @@ program
   .argument('<action>', 'Action to perform')
   .option('-d, --data <data>', 'Message data (JSON string or plain text)')
   .option('-t, --tag <tags...>', 'Additional tags in format name=value')
+  .option('-p, --prop <props...>', 'Message properties (direct attributes) in format name=value')
   .option('-w, --wait', 'Wait for result after sending message')
   .action(async (processId, action, options) => {
     try {
@@ -926,12 +932,23 @@ program
         });
       }
 
+      const props = [];
+      if (options.prop) {
+        options.prop.forEach(propStr => {
+          const [name, value] = propStr.split('=');
+          if (name && value) {
+            props.push({ name, value });
+          }
+        });
+      }
+
       const messageId = await sendMessage({
         wallet,
         processId,
         action,
         data: options.data,
-        tags
+        tags,
+        props
       });
 
       // Check if result was processed immediately (like AOS)
