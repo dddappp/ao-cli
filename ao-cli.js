@@ -1349,12 +1349,12 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
 
           // 选择最佳匹配：Handler结果优先级最高，立即返回；否则继续重试
           if (bestMatch) {
-            matchedResult = bestMatch;
+            messageResult = bestMatch;
             if (!isJsonMode) {
               console.log(`   ✅ 第${attempt}次尝试成功！选择最佳匹配：Handler处理结果`);
               console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
             }
-            // 找到Handler结果，立即返回，不需要继续重试
+            break; // 找到最佳结果，立即跳出重试循环
           } else if (fallbackMatch && attempt === maxRetries) {
             // 只有在最后一次重试仍然没有找到Handler结果时，才选择发送操作结果
             matchedResult = fallbackMatch;
@@ -1371,20 +1371,16 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
               }
             }
             // 没有找到Handler结果，继续下一次重试
-            matchedResult = null;
+            messageResult = null;
           }
 
           // 策略2: 如果没有找到精确匹配，则查找最近的有意义输出（后备策略）
-          if (!matchedResult) {
-            matchedResult = findFallbackResult(resultsResponse, isJsonMode);
-            if (matchedResult && !isJsonMode) {
+          if (!messageResult) {
+            messageResult = findFallbackResult(resultsResponse, isJsonMode);
+            if (messageResult && !isJsonMode) {
               console.log(`   ✅ 第${attempt}次尝试成功！找到目标进程的最近handler执行记录 (Reference关联失败，使用最近活动)`);
               console.log(`   📝 注意：由于无法精确关联，使用最近的handler活动作为参考`);
             }
-          }
-
-          if (matchedResult) {
-            messageResult = matchedResult;
           }
         }
 
