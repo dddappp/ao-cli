@@ -203,12 +203,12 @@ if echo "$TRACE_JSON_ONLY" | jq . >/dev/null 2>&1; then
         echo "✅ JSON模式trace功能工作正常！"
         echo "   📝 trace结果已整合到JSON结构的 trace 字段中"
 
-        # 检查trace内容
-        TRACE_COUNT=$(echo "$TRACE_JSON_ONLY" | jq '.trace.tracedMessages | length')
+        # 检查trace内容 - 只统计包含trace字段的JSON对象
+        TRACE_COUNT=$(echo "$TRACE_JSON_ONLY" | jq -s 'map(select(has("trace"))) | .[0].trace.tracedMessages | length')
         echo "   📊 追踪了 $TRACE_COUNT 个消息"
 
-        # 检查trace结果的完整性
-        HAS_VALID_TRACE=$(echo "$TRACE_JSON_ONLY" | jq '.trace.tracedMessages[0] | has("status") and has("targetProcess") and has("data")')
+        # 检查trace结果的完整性 - 只检查包含trace字段的JSON对象
+        HAS_VALID_TRACE=$(echo "$TRACE_JSON_ONLY" | jq 'select(has("trace")) | .trace.tracedMessages[0] | has("status") and has("targetProcess") and has("data")')
         if [ "$HAS_VALID_TRACE" = "true" ]; then
             echo "   ✅ trace数据结构完整"
             echo "   📝 包含消息状态、目标进程、数据等必要信息"

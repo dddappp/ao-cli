@@ -1247,7 +1247,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       │ }
       └─────────────────────────────────────────────────────────────┘
       */
-      if (outputData.includes('function: 0x') 
+      if (outputData.includes('function: 0x')
         && outputData.includes('output =') && outputData.includes('Message added to outbox')
       ) {
         return true;
