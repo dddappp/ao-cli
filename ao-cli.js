@@ -1265,7 +1265,15 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       ) {
         return true;
       }
-      // TODO: More system output patterns to detect?
+
+      // 清理ANSI颜色代码后重新检查（处理AOS终端着色输出）
+      const cleanData = dataString.replace(/\u001b\[[0-9;]*m/g, '');
+      if (cleanData.includes('function: 0x')
+        && cleanData.includes('output')
+        && cleanData.includes('Message added to outbox')
+      ) {
+        return true;
+      }
 
       return false;
     };
