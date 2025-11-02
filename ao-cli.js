@@ -1234,7 +1234,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
 
     // 尝试通过Reference精确关联消息处理结果
     const maxRetries = 12;
-    const retryDelay = 1500;
+    const retryDelay = 8000; // 8秒间隔，避免CU API频率限制
 
     // 抽取结果判断函数
     const createOutputClassifiers = () => {
