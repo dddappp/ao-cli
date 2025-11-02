@@ -1333,17 +1333,12 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
               console.log(`   ✅ 第${attempt}次尝试成功！选择最佳匹配：Handler处理结果`);
               console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
             }
-          } else if (fallbackMatch && attempt >= 5) {
-            // 只有在重试了足够次数后仍未找到Handler结果，才选择发送操作结果
+          } else if (fallbackMatch) {
+            // 遍历完所有结果都没有找到Handler结果，选择发送操作结果
             matchedResult = fallbackMatch;
             if (!isJsonMode) {
-              console.log(`   ✅ 第${attempt}次尝试成功！选择备选匹配：发送操作结果（重试${attempt}次未找到Handler结果）`);
+              console.log(`   ✅ 第${attempt}次尝试成功！选择备选匹配：发送操作结果（未找到Handler结果）`);
               console.log(`   🔍 结果类型：发送操作结果（来自发送进程，中等优先级）`);
-            }
-          } else if (fallbackMatch) {
-            // 找到了发送操作结果，但继续重试等待Handler结果出现
-            if (!isJsonMode) {
-              console.log(`   ⏳ 找到发送操作结果但继续等待Handler结果（第${attempt}次尝试，重试中...）`);
             }
           } else {
             if (!isJsonMode) {
