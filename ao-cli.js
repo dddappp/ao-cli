@@ -1236,128 +1236,150 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     const maxRetries = 12;
     const retryDelay = 1500;
 
+    // 抽取结果判断函数
+    const createOutputClassifiers = () => {
+      const isSystemOutput = (outputData) => {
+        if (!outputData || typeof outputData !== 'string') return false;
+
+        // 纯系统输出：只有简单的确认信息
+        if (outputData.trim() === 'Message added to outbox') return true;
+
+        // 系统计算函数
+        if (outputData.trim() === 'compute(base, req, opts)') return true;
+
+        // AOS内部调试信息格式（Lua表格式，包含函数引用）
+        if (outputData.includes('onReply') &&
+            outputData.includes('receive') &&
+            outputData.includes('function: 0x')) {
+          return true;
+        }
+
+        // 其他包含函数引用的输出（可能是系统调试信息）
+        if (outputData.includes('function: 0x') && outputData.includes('output =')) {
+          return true;
+        }
+
+        return false;
+      };
+
+      const isHandlerResult = (outputData) => {
+        return !isSystemOutput(outputData) && outputData.trim().length > 0;
+      };
+
+      const isSendOperation = (outputData) => {
+        return isSystemOutput(outputData) && outputData.includes('Message added to outbox');
+      };
+
+      return { isSystemOutput, isHandlerResult, isSendOperation };
+    };
+
+    // 抽取查找匹配结果的函数
+    const findMatchingResult = (resultsResponse, messageReference, isJsonMode) => {
+      const { isHandlerResult, isSendOperation } = createOutputClassifiers();
+
+      let bestMatch = null; // Handler处理结果（最高优先级）
+      let fallbackMatch = null; // 发送操作结果（中等优先级）
+
+      for (const edge of resultsResponse.edges) {
+        if (edge.node && edge.node.Messages && Array.isArray(edge.node.Messages)) {
+          const hasMatchingReference = edge.node.Messages.some(msg =>
+            msg.Tags && msg.Tags.some(tag =>
+              tag.name === 'Reference' && tag.value === messageReference
+            )
+          );
+
+          if (hasMatchingReference) {
+            const outputData = edge.node.Output?.data || '';
+
+            if (!isJsonMode) {
+              console.log(`   🔍 检查结果: isHandler=${isHandlerResult(outputData)}, isSendOp=${isSendOperation(outputData)}, data=${outputData.substring(0, 50)}${outputData.length > 50 ? '...' : ''}`);
+            }
+
+            // 优先检查Handler处理结果（最高优先级）
+            if (isHandlerResult(outputData)) {
+              bestMatch = edge.node;
+              if (!isJsonMode) {
+                console.log(`   ✅ 发现Reference=${messageReference}的Handler处理结果（最高优先级，立即选择）`);
+              }
+              break; // 找到Handler结果就退出循环，这是最佳匹配
+            }
+
+            // 检查发送操作结果（中等优先级）
+            if (isSendOperation(outputData) && !bestMatch) {
+              if (!fallbackMatch) {
+                fallbackMatch = edge.node;
+                if (!isJsonMode) {
+                  console.log(`   📝 找到Reference=${messageReference}的发送操作结果（备选，继续寻找Handler结果）`);
+                }
+              }
+              // 继续遍历，不要退出，看是否有更好的Handler结果
+            }
+          }
+        }
+      }
+
+      return { bestMatch, fallbackMatch };
+    };
+
+    // 抽取后备策略查找函数
+    const findFallbackResult = (resultsResponse, isJsonMode) => {
+      const { isHandlerResult, isSendOperation } = createOutputClassifiers();
+
+      for (const edge of resultsResponse.edges.slice(0, 10)) {
+        const outputData = edge.node?.Output?.data;
+        if (outputData && (isHandlerResult(outputData) || isSendOperation(outputData))) {
+          return edge.node;
+        }
+      }
+      return null;
+    };
+
+    // 主重试循环
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         if (!isJsonMode && attempt === 1) {
           console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}关联处理结果 (最多尝试 ${maxRetries} 次)...`);
         }
 
-        const resultsResponse = await queryProcessResults(wallet, targetProcess, 50); // 查询更多结果
+        const resultsResponse = await queryProcessResults(wallet, targetProcess, 50);
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          // 判断是否为系统输出（发送操作的结果或调试信息）
-          const isSystemOutput = (outputData) => {
-            if (!outputData || typeof outputData !== 'string') return false;
+          // 在当前查询结果中查找匹配项
+          const { bestMatch, fallbackMatch } = findMatchingResult(resultsResponse, messageReference, isJsonMode);
 
-            // 纯系统输出：只有简单的确认信息
-            if (outputData.trim() === 'Message added to outbox') return true;
-
-            // 系统计算函数
-            if (outputData.trim() === 'compute(base, req, opts)') return true;
-
-            // AOS内部调试信息格式（Lua表格式，包含函数引用）
-            // 这种格式通常是：{ onReply = function: 0x..., receive = function: 0x..., output = "..." }
-            if (outputData.includes('onReply') &&
-                outputData.includes('receive') &&
-                outputData.includes('function: 0x')) {
-              return true;
-            }
-
-            // 其他包含函数引用的输出（可能是系统调试信息）
-            if (outputData.includes('function: 0x') && outputData.includes('output =')) {
-              return true;
-            }
-
-            return false;
-          };
-
-          // 判断是否为Handler处理结果（优先级最高）
-          const isHandlerResult = (outputData) => {
-            return !isSystemOutput(outputData) && outputData.trim().length > 0;
-          };
-
-          // 判断是否为发送操作结果（中等优先级）
-          const isSendOperation = (outputData) => {
-            return isSystemOutput(outputData) && outputData.includes('Message added to outbox');
-          };
-
-          // 尝试通过Reference精确关联 - 在一次遍历中找到最佳和次佳匹配
-          let bestMatch = null; // Handler处理结果（最高优先级）
-          let fallbackMatch = null; // 发送操作结果（中等优先级）
-          let foundHandlerResult = false;
-
-          for (const edge of resultsResponse.edges) {
-            if (edge.node && edge.node.Messages && Array.isArray(edge.node.Messages)) {
-              const hasMatchingReference = edge.node.Messages.some(msg =>
-                msg.Tags && msg.Tags.some(tag =>
-                  tag.name === 'Reference' && tag.value === messageReference
-                )
-              );
-
-              if (hasMatchingReference) {
-                const outputData = edge.node.Output?.data || '';
-
-                if (!isJsonMode) {
-                  console.log(`   🔍 检查结果: isHandler=${isHandlerResult(outputData)}, isSendOp=${isSendOperation(outputData)}, data=${outputData.substring(0, 50)}${outputData.length > 50 ? '...' : ''}`);
-                }
-
-                // 优先检查Handler处理结果（最高优先级）
-                if (isHandlerResult(outputData)) {
-                  bestMatch = edge.node;
-                  foundHandlerResult = true;
-                  if (!isJsonMode) {
-                    console.log(`   ✅ 发现Reference=${messageReference}的Handler处理结果（最高优先级，立即选择）`);
-                  }
-                  break; // 找到Handler结果就退出循环，这是最佳匹配
-                }
-
-                // 检查发送操作结果（中等优先级）
-                // 注意：只有当这个结果明确是"Message added to outbox"时才作为备选
-                if (isSendOperation(outputData) && !foundHandlerResult) {
-                  if (!fallbackMatch) {
-                    fallbackMatch = edge.node;
-                    if (!isJsonMode) {
-                      console.log(`   📝 找到Reference=${messageReference}的发送操作结果（备选，继续寻找Handler结果）`);
-                    }
-                  }
-                  // 继续遍历，不要退出，看是否有更好的Handler结果
-                }
-              }
-            }
-          }
-
-          // 选择最佳匹配：Handler结果优先级最高
+          // 选择最佳匹配：Handler结果优先级最高，立即返回；否则继续重试
           if (bestMatch) {
             matchedResult = bestMatch;
             if (!isJsonMode) {
               console.log(`   ✅ 第${attempt}次尝试成功！选择最佳匹配：Handler处理结果`);
               console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
             }
-          } else if (fallbackMatch) {
-            // 遍历完所有结果都没有找到Handler结果，选择发送操作结果
+            // 找到Handler结果，立即返回，不需要继续重试
+          } else if (fallbackMatch && attempt === maxRetries) {
+            // 只有在最后一次重试仍然没有找到Handler结果时，才选择发送操作结果
             matchedResult = fallbackMatch;
             if (!isJsonMode) {
-              console.log(`   ✅ 第${attempt}次尝试成功！选择备选匹配：发送操作结果（未找到Handler结果）`);
+              console.log(`   ✅ 经过${attempt}次尝试，仍未找到Handler结果，选择备选匹配：发送操作结果`);
               console.log(`   🔍 结果类型：发送操作结果（来自发送进程，中等优先级）`);
             }
           } else {
             if (!isJsonMode) {
-              console.log(`   📭 本次查询未找到任何匹配的结果，继续重试...`);
+              if (fallbackMatch) {
+                console.log(`   ⏳ 第${attempt}次尝试找到发送操作结果但未找到Handler结果，继续重试...`);
+              } else {
+                console.log(`   📭 第${attempt}次尝试未找到任何匹配的结果，继续重试...`);
+              }
             }
+            // 没有找到Handler结果，继续下一次重试
+            matchedResult = null;
           }
 
           // 策略2: 如果没有找到精确匹配，则查找最近的有意义输出（后备策略）
           if (!matchedResult) {
-            for (const edge of resultsResponse.edges.slice(0, 10)) {
-              const outputData = edge.node?.Output?.data;
-              if (outputData && (isHandlerResult(outputData) || isSendOperation(outputData))) {
-                matchedResult = edge.node;
-                if (!isJsonMode) {
-                  console.log(`   ✅ 第${attempt}次尝试成功！找到目标进程的最近handler执行记录 (Reference关联失败，使用最近活动)`);
-                  console.log(`   📝 注意：由于无法精确关联，使用最近的handler活动作为参考`);
-                }
-                break;
-              }
+            matchedResult = findFallbackResult(resultsResponse, isJsonMode);
+            if (matchedResult && !isJsonMode) {
+              console.log(`   ✅ 第${attempt}次尝试成功！找到目标进程的最近handler执行记录 (Reference关联失败，使用最近活动)`);
+              console.log(`   📝 注意：由于无法精确关联，使用最近的handler活动作为参考`);
             }
           }
 
