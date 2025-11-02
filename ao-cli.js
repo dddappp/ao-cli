@@ -1237,7 +1237,19 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     const retryDelay = 8000; // 8秒间隔，避免CU API频率限制
 
     const isSystemOutput = (outputData) => {
-      if (!outputData || typeof outputData !== 'string') return false;
+      if (!outputData) return false;
+
+      // 处理不同格式的数据
+      let dataString;
+      if (typeof outputData === 'string') {
+        dataString = outputData;
+      } else if (typeof outputData === 'object') {
+        // 如果是对象，转换为字符串进行检查
+        dataString = JSON.stringify(outputData);
+      } else {
+        return false;
+      }
+
       /*
       ┌─────────────────────────────────────────────────────────────┐
       │ {
@@ -1247,8 +1259,9 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       │ }
       └─────────────────────────────────────────────────────────────┘
       */
-      if (outputData.includes('function: 0x')
-        && outputData.includes('output =') && outputData.includes('Message added to outbox')
+      if (dataString.includes('function: 0x')
+        && dataString.includes('output')
+        && dataString.includes('Message added to outbox')
       ) {
         return true;
       }
@@ -1278,7 +1291,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 const outputData = edge.node.Output?.data || '';
 
                 if (!isJsonMode) {
-                  console.log(`   🔍 检查结果: isSystem=${isSystemOutput(outputData)}, data=${outputData.substring(0, 50)}${outputData.length > 50 ? '...' : ''}`);
+                  console.log(`   🔍 检查结果: type=${typeof outputData}, isSystem=${isSystemOutput(outputData)}, data=${JSON.stringify(outputData).substring(0, 100)}${JSON.stringify(outputData).length > 100 ? '...' : ''}`);
                 }
 
                 // 如果 Reference 匹配，并且不是系统输出，则马上返回结果
