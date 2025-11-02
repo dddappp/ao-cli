@@ -1240,25 +1240,21 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     const createOutputClassifiers = () => {
       const isSystemOutput = (outputData) => {
         if (!outputData || typeof outputData !== 'string') return false;
-
-        // 纯系统输出：只有简单的确认信息
-        if (outputData.trim() === 'Message added to outbox') return true;
-
-        // 系统计算函数
-        if (outputData.trim() === 'compute(base, req, opts)') return true;
-
-        // AOS内部调试信息格式（Lua表格式，包含函数引用）
-        // 可能是完整的：{ onReply = function: 0x..., receive = function: 0x..., output = "..." }
-        // 也可能是简化的：{ onReply = function: 0x... } 或 { receive = function: 0x... }
-        if (outputData.includes('function: 0x') &&
-            (outputData.includes('onReply') || outputData.includes('receive'))) {
+        /*
+        ┌─────────────────────────────────────────────────────────────┐
+        │ {
+        │    onReply = function: 0x41ce1c0,
+        │    receive = function: 0x4113820,
+        │    output = "Message added to outbox"
+        │ }
+        └─────────────────────────────────────────────────────────────┘
+        */
+        if (outputData.includes('function: 0x') 
+          && outputData.includes('output =') && outputData.includes('Message added to outbox')
+        ) {
           return true;
         }
-
-        // 其他包含函数引用的输出（可能是系统调试信息）
-        if (outputData.includes('function: 0x') && outputData.includes('output =')) {
-          return true;
-        }
+        // TODO: More system output patterns to detect?
 
         return false;
       };
