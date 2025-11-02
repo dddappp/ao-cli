@@ -1375,10 +1375,11 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           }
 
           // 策略2: 如果没有找到精确匹配，则查找最近的有意义输出（后备策略）
-          if (!messageResult) {
+          // 注意：只有在所有重试都完成后才使用后备结果，这样可以给精确匹配更多机会
+          if (!messageResult && attempt === maxRetries) {
             messageResult = findFallbackResult(resultsResponse, isJsonMode);
             if (messageResult && !isJsonMode) {
-              console.log(`   ✅ 第${attempt}次尝试成功！找到目标进程的最近handler执行记录 (Reference关联失败，使用最近活动)`);
+              console.log(`   ✅ 经过${attempt}次尝试，仍未找到精确匹配，使用后备策略找到最近handler执行记录`);
               console.log(`   📝 注意：由于无法精确关联，使用最近的handler活动作为参考`);
             }
           }
