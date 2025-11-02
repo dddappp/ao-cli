@@ -1186,7 +1186,9 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     console.log('');
     console.log('🔍 🔍 消息追踪模式 🔍 🔍');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔍 正在查询链上公开信息，尝试获取接收进程Handler的print输出...');
+    console.log('🔍 正在查询目标进程的最近handler执行记录，显示print输出...');
+    console.log('📝 注意：由于AO进程隔离，无法精确关联每个消息的处理结果');
+    console.log('📝 此功能显示目标进程最近的handler活动，便于调试和监控');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   }
 
@@ -1230,50 +1232,49 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       console.log(`   🔗 消息Reference: ${messageReference}`);
     }
 
-    // 从目标进程的结果历史中查找最近的包含handler print输出的结果
-    const maxRetries = 12; // 进一步增加重试次数
-    const retryDelay = 1500; // 减少延迟
+    // 查询目标进程的最近handler执行活动
+    // 注意：由于AO进程隔离，无法精确关联每个消息的处理结果
+    // 此功能显示目标进程最近的handler活动，便于调试和监控
+    const maxRetries = 12;
+    const retryDelay = 1500;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         if (!isJsonMode && attempt === 1) {
-          console.log(`   🔄 查询目标进程结果历史，查找handler print输出 (最多尝试 ${maxRetries} 次)...`);
+          console.log(`   🔄 查询目标进程的最近handler执行记录 (最多尝试 ${maxRetries} 次)...`);
         }
 
-        const resultsResponse = await queryProcessResults(wallet, targetProcess, 20); // 查询最近20个结果
+        const resultsResponse = await queryProcessResults(wallet, targetProcess, 30);
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          // 检查最近的结果，看是否有handler的print输出
-          // 优先选择最新的（最近的）包含handler print输出的结果
-          let latestHandlerResult = null;
+          // 查找最近的有意义的handler执行结果
+          let latestMeaningfulResult = null;
 
-          for (const edge of resultsResponse.edges.slice(0, 10)) { // 检查最近10个结果
+          for (const edge of resultsResponse.edges.slice(0, 15)) { // 检查最近15个结果
             if (edge.node && edge.node.Output) {
               const outputData = edge.node.Output.data;
               if (outputData && typeof outputData === 'string') {
-                // 检查是否包含handler的print输出（基于test-app.lua中的模式）
-                const hasHandlerPrint = outputData.includes('🎯') ||
-                  outputData.includes('📨') ||
-                  outputData.includes('🔄') ||
-                  outputData.includes('📤') ||
-                  outputData.includes('✅') ||
-                  // 或者包含"New Message From"模式（其他handler的输出）
-                  outputData.includes('New Message From');
+                // 通用的handler输出识别：查找有实际内容的输出
+                const lines = outputData.split('\n').filter(line => line.trim().length > 0);
+                const hasSubstantialOutput =
+                  lines.length >= 2 && // 至少2行输出
+                  lines.some(line => line.length > 10) && // 至少有一行有意义的内容
+                  !outputData.includes('compute(base, req, opts)') && // 排除系统模板代码
+                  !outputData.includes('function: 0x'); // 排除纯函数引用输出
 
-                if (hasHandlerPrint) {
-                  // 找到最新的（第一个匹配的，因为results是按时间倒序排列的）
-                  latestHandlerResult = edge.node;
+                if (hasSubstantialOutput) {
+                  latestMeaningfulResult = edge.node;
                   if (!isJsonMode) {
-                    console.log(`   ✅ 第${attempt}次尝试成功！找到包含handler print输出的处理结果`);
+                    console.log(`   ✅ 第${attempt}次尝试成功！找到目标进程的handler执行记录`);
                   }
-                  break; // 找到最新的就停止
+                  break;
                 }
               }
             }
           }
 
-          if (latestHandlerResult) {
-            messageResult = latestHandlerResult;
+          if (latestMeaningfulResult) {
+            messageResult = latestMeaningfulResult;
           }
         }
 
@@ -1286,7 +1287,8 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           await new Promise(resolve => setTimeout(resolve, retryDelay));
         } else {
           if (!isJsonMode) {
-            console.log(`   📭 经过 ${maxRetries} 次尝试，仍未找到包含handler print输出的处理记录`);
+            console.log(`   📭 经过 ${maxRetries} 次尝试，未找到目标进程的handler执行记录`);
+            console.log(`   💡 可能原因：目标进程近期没有执行过handler，或者网络延迟较大`);
           }
         }
       } catch (error) {
