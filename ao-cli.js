@@ -1291,7 +1291,9 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 const outputData = edge.node.Output?.data || '';
 
                 if (!isJsonMode) {
-                  console.log(`   🔍 检查结果: type=${typeof outputData}, isSystem=${isSystemOutput(outputData)}, data=${JSON.stringify(outputData).substring(0, 100)}${JSON.stringify(outputData).length > 100 ? '...' : ''}`);
+                  console.log(`   🔍 检查结果: type=${typeof outputData}, isSystem=${isSystemOutput(outputData)}`);
+                  console.log(`   📄 完整数据: ${JSON.stringify(outputData)}`);
+                  console.log(`   🔍 包含检查: function:0x=${outputData.includes('function: 0x')}, output=${outputData.includes('output')}, Message=${outputData.includes('Message added to outbox')}`);
                 }
 
                 // 如果 Reference 匹配，并且不是系统输出，则马上返回结果
