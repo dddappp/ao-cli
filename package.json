@@ -1,6 +1,6 @@
 {
   "name": "@dddappp/ao-cli",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "description": "Universal AO CLI tool for testing and automating AO dApps (replaces AOS REPL)",
   "main": "ao-cli.js",
   "bin": {
