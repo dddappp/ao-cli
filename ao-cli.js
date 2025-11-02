@@ -1186,9 +1186,9 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     console.log('');
     console.log('🔍 🔍 消息追踪模式 🔍 🔍');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🔍 正在查询目标进程的最近handler执行记录，显示print输出...');
-    console.log('📝 注意：由于AO进程隔离，无法精确关联每个消息的处理结果');
-    console.log('📝 此功能显示目标进程最近的handler活动，便于调试和监控');
+    console.log('🔍 正在查询目标进程的结果历史，尝试通过Reference精确关联消息处理结果...');
+    console.log('📝 Reference是AO消息系统的唯一标识符，可以用来关联发送消息和处理结果');
+    console.log('📝 如果找到精确匹配，将显示该消息触发的handler print输出');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   }
 
@@ -1232,49 +1232,70 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       console.log(`   🔗 消息Reference: ${messageReference}`);
     }
 
-    // 查询目标进程的最近handler执行活动
-    // 注意：由于AO进程隔离，无法精确关联每个消息的处理结果
-    // 此功能显示目标进程最近的handler活动，便于调试和监控
+    // 尝试通过Reference精确关联消息处理结果
     const maxRetries = 12;
     const retryDelay = 1500;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         if (!isJsonMode && attempt === 1) {
-          console.log(`   🔄 查询目标进程的最近handler执行记录 (最多尝试 ${maxRetries} 次)...`);
+          console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}关联处理结果 (最多尝试 ${maxRetries} 次)...`);
         }
 
-        const resultsResponse = await queryProcessResults(wallet, targetProcess, 30);
+        const resultsResponse = await queryProcessResults(wallet, targetProcess, 50); // 查询更多结果
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          // 查找最近的有意义的handler执行结果
-          let latestMeaningfulResult = null;
+          // 尝试通过Reference精确关联
+          let matchedResult = null;
 
-          for (const edge of resultsResponse.edges.slice(0, 15)) { // 检查最近15个结果
-            if (edge.node && edge.node.Output) {
-              const outputData = edge.node.Output.data;
-              if (outputData && typeof outputData === 'string') {
-                // 通用的handler输出识别：查找有实际内容的输出
-                const lines = outputData.split('\n').filter(line => line.trim().length > 0);
-                const hasSubstantialOutput =
-                  lines.length >= 2 && // 至少2行输出
-                  lines.some(line => line.length > 10) && // 至少有一行有意义的内容
-                  !outputData.includes('compute(base, req, opts)') && // 排除系统模板代码
-                  !outputData.includes('function: 0x'); // 排除纯函数引用输出
+          // 策略1: 查找Messages数组中包含匹配Reference的消息的结果
+          for (const edge of resultsResponse.edges) {
+            if (edge.node && edge.node.Messages && Array.isArray(edge.node.Messages)) {
+              const hasMatchingReference = edge.node.Messages.some(msg =>
+                msg.Tags && msg.Tags.some(tag =>
+                  tag.name === 'Reference' && tag.value === messageReference
+                )
+              );
 
-                if (hasSubstantialOutput) {
-                  latestMeaningfulResult = edge.node;
-                  if (!isJsonMode) {
-                    console.log(`   ✅ 第${attempt}次尝试成功！找到目标进程的handler执行记录`);
+              if (hasMatchingReference) {
+                matchedResult = edge.node;
+                if (!isJsonMode) {
+                  console.log(`   ✅ 第${attempt}次尝试成功！通过Reference=${messageReference}精确关联到处理结果`);
+                  console.log(`   🔍 匹配详情：处理结果包含Reference=${messageReference}的消息`);
+                }
+                break;
+              }
+            }
+          }
+
+          // 策略2: 如果没有找到精确匹配，则查找最近的有意义输出（后备策略）
+          if (!matchedResult) {
+            for (const edge of resultsResponse.edges.slice(0, 10)) {
+              if (edge.node && edge.node.Output) {
+                const outputData = edge.node.Output.data;
+                if (outputData && typeof outputData === 'string') {
+                  const lines = outputData.split('\n').filter(line => line.trim().length > 0);
+                  const hasSubstantialOutput =
+                    lines.length >= 2 &&
+                    lines.some(line => line.length > 10) &&
+                    !outputData.includes('compute(base, req, opts)') &&
+                    !outputData.includes('function: 0x');
+
+                  if (hasSubstantialOutput) {
+                    matchedResult = edge.node;
+                    if (!isJsonMode) {
+                      console.log(`   ✅ 第${attempt}次尝试成功！找到目标进程的最近handler执行记录 (Reference关联失败，使用最近活动)`);
+                      console.log(`   📝 注意：由于无法精确关联，使用最近的handler活动作为参考`);
+                    }
+                    break;
                   }
-                  break;
                 }
               }
             }
           }
 
-          if (latestMeaningfulResult) {
-            messageResult = latestMeaningfulResult;
+          if (matchedResult) {
+            messageResult = matchedResult;
           }
         }
 
@@ -1282,13 +1303,13 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           break;
         } else if (attempt < maxRetries) {
           if (!isJsonMode) {
-            console.log(`   ⏳ 第${attempt}次尝试未找到，等待 ${retryDelay}ms 后重试...`);
+            console.log(`   ⏳ 第${attempt}次尝试未找到Reference=${messageReference}的关联结果，等待 ${retryDelay}ms 后重试...`);
           }
           await new Promise(resolve => setTimeout(resolve, retryDelay));
         } else {
           if (!isJsonMode) {
-            console.log(`   📭 经过 ${maxRetries} 次尝试，未找到目标进程的handler执行记录`);
-            console.log(`   💡 可能原因：目标进程近期没有执行过handler，或者网络延迟较大`);
+            console.log(`   📭 经过 ${maxRetries} 次尝试，未找到与Reference=${messageReference}关联的处理结果`);
+            console.log(`   💡 可能原因：消息尚未被处理、处理结果尚未记录到链上、或CU API限制`);
           }
         }
       } catch (error) {
