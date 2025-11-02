@@ -1245,15 +1245,36 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
         const resultsResponse = await queryProcessResults(wallet, targetProcess, 50); // 查询更多结果
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          // 统一的实质性输出判断函数
-          const hasSubstantialOutput = (outputData) => {
+          // 判断是否为Handler处理结果（优先级最高）
+          const isHandlerResult = (outputData) => {
             if (!outputData || typeof outputData !== 'string') return false;
+
+            // Handler结果通常有以下特征：
+            // 1. 不包含"Message added to outbox"
+            // 2. 包含多行有意义的内容（非纯调试信息）
+            // 3. 通常有实际的业务逻辑输出
+
+            if (outputData.includes('Message added to outbox')) return false;
+
             const lines = outputData.split('\n').filter(line => line.trim().length > 0);
-            return lines.length >= 2 &&
-                   lines.some(line => line.length > 10) &&
-                   !outputData.includes('compute(base, req, opts)') &&
-                   !outputData.includes('function: 0x') &&
-                   !outputData.includes('Message added to outbox');
+
+            // 如果只有很少的行数，可能是系统输出而不是业务输出
+            if (lines.length < 2) return false;
+
+            // 检查是否包含函数引用（通常是调试信息，不是业务输出）
+            const hasFunctionRefs = /function:\s*0x[0-9a-f]+/i.test(outputData);
+
+            // 如果主要是函数引用，可能是调试信息而不是业务输出
+            if (hasFunctionRefs && lines.length <= 3) return false;
+
+            // 如果有多行内容且不是纯调试信息，则认为是Handler结果
+            return lines.length >= 2 && lines.some(line => line.trim().length > 5);
+          };
+
+          // 判断是否为发送操作结果（中等优先级）
+          const isSendOperation = (outputData) => {
+            return outputData && typeof outputData === 'string' &&
+                   outputData.includes('Message added to outbox');
           };
 
           // 尝试通过Reference精确关联 - 在一次遍历中找到最佳和次佳匹配
@@ -1272,8 +1293,8 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
               if (hasMatchingReference) {
                 const outputData = edge.node.Output?.data || '';
 
-                // 检查是否是Handler的实质性输出（最高优先级）
-                if (hasSubstantialOutput(outputData)) {
+                // 优先检查Handler处理结果（最高优先级）
+                if (isHandlerResult(outputData)) {
                   bestMatch = edge.node;
                   foundHandlerResult = true;
                   if (!isJsonMode) {
@@ -1282,8 +1303,8 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                   break; // 找到Handler结果就退出循环，这是最佳匹配
                 }
 
-                // 检查是否是发送操作结果（中等优先级）
-                if (outputData.includes('Message added to outbox') && !foundHandlerResult) {
+                // 检查发送操作结果（中等优先级）
+                if (isSendOperation(outputData) && !foundHandlerResult) {
                   if (!fallbackMatch) {
                     fallbackMatch = edge.node;
                     if (!isJsonMode) {
@@ -1314,7 +1335,8 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           // 策略2: 如果没有找到精确匹配，则查找最近的有意义输出（后备策略）
           if (!matchedResult) {
             for (const edge of resultsResponse.edges.slice(0, 10)) {
-              if (edge.node && edge.node.Output && hasSubstantialOutput(edge.node.Output.data)) {
+              const outputData = edge.node?.Output?.data;
+              if (outputData && (isHandlerResult(outputData) || isSendOperation(outputData))) {
                 matchedResult = edge.node;
                 if (!isJsonMode) {
                   console.log(`   ✅ 第${attempt}次尝试成功！找到目标进程的最近handler执行记录 (Reference关联失败，使用最近活动)`);
