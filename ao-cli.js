@@ -1278,7 +1278,10 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       return false;
     };
     // 简化逻辑：按注释要求实现
+    let foundHandlerResult = false;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (foundHandlerResult) break; // 如果已经找到了Handler结果，跳出外层循环
+
       try {
         if (!isJsonMode && attempt === 1) {
           console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}关联处理结果 (最多尝试 ${maxRetries} 次)...`);
@@ -1298,24 +1301,8 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
               if (hasMatchingReference) {
                 const outputData = edge.node.Output?.data || '';
 
-                // 调试代码已移除，问题已解决
-
                 // 只调用一次 isSystemOutput，避免重复计算
                 const isSystem = isSystemOutput(outputData);
-
-                if (!isJsonMode) {
-                  console.log(`   🔍 调试: attempt=${attempt}, isSystem=${isSystem}, hasContent=${outputData.trim().length > 0}, dataLen=${outputData.length}`);
-                  console.log(`   📄 数据内容: ${outputData.substring(0, 200)}${outputData.length > 200 ? '...' : ''}`);
-                  // 详细分析为什么被判断为系统输出
-                  if (isSystem) {
-                    const cleanData = outputData.replace(/\u001b\[[0-9;]*m/g, '');
-                    console.log(`   🔍 系统输出分析: function:0x=${cleanData.includes('function: 0x')}, output=${cleanData.includes('output')}, Message=${cleanData.includes('Message added to outbox')}`);
-                  }
-                  // 检查条件
-                  const condition1 = !isSystem;
-                  const condition2 = outputData.trim().length > 0;
-                  console.log(`   🔍 条件检查: !isSystem=${condition1}, hasContent=${condition2}, 总条件=${condition1 && condition2}`);
-                }
 
                 if (!isSystem && outputData.trim().length > 0) {
                   // 找到了Handler结果，立即返回
@@ -1324,8 +1311,9 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                     console.log(`   ✅ 第${attempt}次尝试成功！找到Reference=${messageReference}的Handler处理结果`);
                     console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
                   }
-                  // 立即break循环，不需要继续重试
-                  console.log(`   🔄 调试: 执行break，退出循环`);
+                  // 设置标志并break内层循环，外层循环会在下次迭代时检查标志并退出
+                  console.log(`   🔄 调试: 找到Handler结果，设置退出标志`);
+                  foundHandlerResult = true;
                   break;
                 } else if (isSystem) {
                   // 系统输出，作为备选结果，继续重试寻找更好的结果
