@@ -1248,7 +1248,9 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           // 尝试通过Reference精确关联
           let matchedResult = null;
 
-          // 策略1: 查找Messages数组中包含匹配Reference的消息的结果
+          // 策略1: 优先查找包含匹配Reference且有实质Handler输出的结果
+          let sendOperationResult = null; // 保存发送操作结果作为后备
+
           for (const edge of resultsResponse.edges) {
             if (edge.node && edge.node.Messages && Array.isArray(edge.node.Messages)) {
               const hasMatchingReference = edge.node.Messages.some(msg =>
@@ -1258,13 +1260,39 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
               );
 
               if (hasMatchingReference) {
-                matchedResult = edge.node;
-                if (!isJsonMode) {
-                  console.log(`   ✅ 第${attempt}次尝试成功！通过Reference=${messageReference}精确关联到处理结果`);
-                  console.log(`   🔍 匹配详情：处理结果包含Reference=${messageReference}的消息`);
+                const outputData = edge.node.Output?.data || '';
+
+                // 检查是否是Handler的实质性输出（优先选择）
+                const hasHandlerOutput = (outputData.includes('🎯') || outputData.includes('📨') ||
+                                        outputData.includes('Handler') || outputData.includes('processing')) &&
+                                        !outputData.includes('Message added to outbox');
+
+                if (hasHandlerOutput) {
+                  // 找到了Handler处理结果，完美匹配！
+                  matchedResult = edge.node;
+                  if (!isJsonMode) {
+                    console.log(`   ✅ 第${attempt}次尝试成功！通过Reference=${messageReference}精确关联到Handler处理结果`);
+                    console.log(`   🔍 匹配详情：处理结果包含Reference=${messageReference}的消息，且有Handler输出`);
+                    console.log(`   🔍 结果类型：Handler处理结果（来自接收进程）`);
+                  }
+                  break;
+                } else if (outputData.includes('Message added to outbox')) {
+                  // 保存发送操作结果作为后备，但继续查找是否有更好的结果
+                  sendOperationResult = edge.node;
+                  if (!isJsonMode) {
+                    console.log(`   📝 找到Reference=${messageReference}的发送操作结果，继续查找Handler结果...`);
+                  }
                 }
-                break;
               }
+            }
+          }
+
+          // 如果没有找到Handler结果，但找到了发送操作结果，则使用发送操作结果
+          if (!matchedResult && sendOperationResult) {
+            matchedResult = sendOperationResult;
+            if (!isJsonMode) {
+              console.log(`   ✅ 使用Reference=${messageReference}的发送操作结果（未找到Handler结果）`);
+              console.log(`   🔍 结果类型：发送操作结果（来自发送进程）`);
             }
           }
 
