@@ -1210,36 +1210,70 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       continue;
     }
 
-    // 从目标进程的结果历史中查找消息处理结果
-    // 我们通过检查最近的结果，看是否有匹配的消息
-    const maxRetries = 8; // 增加重试次数
-    const retryDelay = 2000; // 减少延迟
+    // 从消息Tags中提取Reference
+    let messageReference = null;
+    if (message.Tags && Array.isArray(message.Tags)) {
+      const referenceTag = message.Tags.find(tag => tag.name === 'Reference');
+      if (referenceTag) {
+        messageReference = referenceTag.value;
+      }
+    }
+
+    if (!messageReference) {
+      if (!isJsonMode) {
+        console.log(`   ⚠️ 无法从消息中提取Reference，无法追踪`);
+      }
+      continue;
+    }
+
+    if (!isJsonMode) {
+      console.log(`   🔗 消息Reference: ${messageReference}`);
+    }
+
+    // 从目标进程的结果历史中查找最近的包含handler print输出的结果
+    const maxRetries = 12; // 进一步增加重试次数
+    const retryDelay = 1500; // 减少延迟
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         if (!isJsonMode && attempt === 1) {
-          console.log(`   🔄 查询目标进程结果历史 (最多尝试 ${maxRetries} 次)...`);
+          console.log(`   🔄 查询目标进程结果历史，查找handler print输出 (最多尝试 ${maxRetries} 次)...`);
         }
 
         const resultsResponse = await queryProcessResults(wallet, targetProcess, 20); // 查询最近20个结果
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          // 检查最近的结果，看是否有print输出
-          for (const edge of resultsResponse.edges.slice(0, 5)) { // 检查最近5个结果
-            if (edge.node && edge.node.Output) {
-              // 检查是否有print标志或者print输出
-              const hasPrint = edge.node.Output.print === true ||
-                (edge.node.Output.data && typeof edge.node.Output.data === 'string' &&
-                  edge.node.Output.data.includes('New Message From'));
+          // 检查最近的结果，看是否有handler的print输出
+          // 优先选择最新的（最近的）包含handler print输出的结果
+          let latestHandlerResult = null;
 
-              if (hasPrint) {
-                messageResult = edge.node;
-                if (!isJsonMode) {
-                  console.log(`   ✅ 第${attempt}次尝试成功！找到Handler处理结果`);
+          for (const edge of resultsResponse.edges.slice(0, 10)) { // 检查最近10个结果
+            if (edge.node && edge.node.Output) {
+              const outputData = edge.node.Output.data;
+              if (outputData && typeof outputData === 'string') {
+                // 检查是否包含handler的print输出（基于test-app.lua中的模式）
+                const hasHandlerPrint = outputData.includes('🎯') ||
+                  outputData.includes('📨') ||
+                  outputData.includes('🔄') ||
+                  outputData.includes('📤') ||
+                  outputData.includes('✅') ||
+                  // 或者包含"New Message From"模式（其他handler的输出）
+                  outputData.includes('New Message From');
+
+                if (hasHandlerPrint) {
+                  // 找到最新的（第一个匹配的，因为results是按时间倒序排列的）
+                  latestHandlerResult = edge.node;
+                  if (!isJsonMode) {
+                    console.log(`   ✅ 第${attempt}次尝试成功！找到包含handler print输出的处理结果`);
+                  }
+                  break; // 找到最新的就停止
                 }
-                break;
               }
             }
+          }
+
+          if (latestHandlerResult) {
+            messageResult = latestHandlerResult;
           }
         }
 
@@ -1252,7 +1286,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           await new Promise(resolve => setTimeout(resolve, retryDelay));
         } else {
           if (!isJsonMode) {
-            console.log(`   📭 经过 ${maxRetries} 次尝试，仍未找到处理记录`);
+            console.log(`   📭 经过 ${maxRetries} 次尝试，仍未找到包含handler print输出的处理记录`);
           }
         }
       } catch (error) {
