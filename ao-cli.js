@@ -1303,6 +1303,10 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 // 只调用一次 isSystemOutput，避免重复计算
                 const isSystem = isSystemOutput(outputData);
 
+                if (!isJsonMode) {
+                  console.log(`   🔍 调试: attempt=${attempt}, isSystem=${isSystem}, hasContent=${outputData.trim().length > 0}, dataLen=${outputData.length}`);
+                }
+
                 if (!isSystem && outputData.trim().length > 0) {
                   // 找到了Handler结果，立即返回
                   messageResult = edge.node;
@@ -1311,6 +1315,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                     console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
                   }
                   // 立即break循环，不需要继续重试
+                  console.log(`   🔄 调试: 执行break，退出循环`);
                   break;
                 } else if (isSystem) {
                   // 系统输出，作为备选结果，继续重试寻找更好的结果
