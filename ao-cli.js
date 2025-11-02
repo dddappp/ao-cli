@@ -1305,6 +1305,16 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
 
                 if (!isJsonMode) {
                   console.log(`   🔍 调试: attempt=${attempt}, isSystem=${isSystem}, hasContent=${outputData.trim().length > 0}, dataLen=${outputData.length}`);
+                  console.log(`   📄 数据内容: ${outputData.substring(0, 200)}${outputData.length > 200 ? '...' : ''}`);
+                  // 详细分析为什么被判断为系统输出
+                  if (isSystem) {
+                    const cleanData = outputData.replace(/\u001b\[[0-9;]*m/g, '');
+                    console.log(`   🔍 系统输出分析: function:0x=${cleanData.includes('function: 0x')}, output=${cleanData.includes('output')}, Message=${cleanData.includes('Message added to outbox')}`);
+                  }
+                  // 检查条件
+                  const condition1 = !isSystem;
+                  const condition2 = outputData.trim().length > 0;
+                  console.log(`   🔍 条件检查: !isSystem=${condition1}, hasContent=${condition2}, 总条件=${condition1 && condition2}`);
                 }
 
                 if (!isSystem && outputData.trim().length > 0) {
