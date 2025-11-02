@@ -1245,18 +1245,30 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
         const resultsResponse = await queryProcessResults(wallet, targetProcess, 50); // 查询更多结果
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          // 简化判断逻辑：只要不是明显的系统输出，都当作有意义的print内容
+          // 判断是否为系统输出（发送操作的结果或调试信息）
           const isSystemOutput = (outputData) => {
             if (!outputData || typeof outputData !== 'string') return false;
 
-            // 明显的系统输出模式
-            const systemOutputs = [
-              'Message added to outbox',  // 发送确认
-              'function: 0x',            // 函数引用
-              'compute(base, req, opts)' // 系统计算函数
-            ];
+            // 纯系统输出：只有简单的确认信息
+            if (outputData.trim() === 'Message added to outbox') return true;
 
-            return systemOutputs.some(pattern => outputData.trim().includes(pattern));
+            // 系统计算函数
+            if (outputData.trim() === 'compute(base, req, opts)') return true;
+
+            // AOS内部调试信息格式（Lua表格式，包含函数引用）
+            // 这种格式通常是：{ onReply = function: 0x..., receive = function: 0x..., output = "..." }
+            if (outputData.includes('onReply') &&
+                outputData.includes('receive') &&
+                outputData.includes('function: 0x')) {
+              return true;
+            }
+
+            // 其他包含函数引用的输出（可能是系统调试信息）
+            if (outputData.includes('function: 0x') && outputData.includes('output =')) {
+              return true;
+            }
+
+            return false;
           };
 
           // 判断是否为Handler处理结果（优先级最高）
@@ -1285,6 +1297,10 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
               if (hasMatchingReference) {
                 const outputData = edge.node.Output?.data || '';
 
+                if (!isJsonMode) {
+                  console.log(`   🔍 检查结果: isHandler=${isHandlerResult(outputData)}, isSendOp=${isSendOperation(outputData)}, data=${outputData.substring(0, 50)}${outputData.length > 50 ? '...' : ''}`);
+                }
+
                 // 优先检查Handler处理结果（最高优先级）
                 if (isHandlerResult(outputData)) {
                   bestMatch = edge.node;
@@ -1296,6 +1312,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 }
 
                 // 检查发送操作结果（中等优先级）
+                // 注意：只有当这个结果明确是"Message added to outbox"时才作为备选
                 if (isSendOperation(outputData) && !foundHandlerResult) {
                   if (!fallbackMatch) {
                     fallbackMatch = edge.node;
@@ -1303,7 +1320,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                       console.log(`   📝 找到Reference=${messageReference}的发送操作结果（备选，继续寻找Handler结果）`);
                     }
                   }
-                  // 继续遍历，不要退出，看是否有Handler结果
+                  // 继续遍历，不要退出，看是否有更好的Handler结果
                 }
               }
             }
