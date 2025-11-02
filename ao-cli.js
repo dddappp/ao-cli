@@ -1300,16 +1300,20 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
 
                 // 调试代码已移除，问题已解决
 
-                // 如果 Reference 匹配，并且不是系统输出，则马上返回结果
-                if (!isSystemOutput(outputData) && outputData.trim().length > 0) {
+                // 只调用一次 isSystemOutput，避免重复计算
+                const isSystem = isSystemOutput(outputData);
+
+                if (!isSystem && outputData.trim().length > 0) {
+                  // 找到了Handler结果，立即返回
                   messageResult = edge.node;
                   if (!isJsonMode) {
                     console.log(`   ✅ 第${attempt}次尝试成功！找到Reference=${messageReference}的Handler处理结果`);
                     console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
                   }
-                  // 立即返回，不需要继续重试
-                } else if (isSystemOutput(outputData)) {
-                  // 如果 Reference 匹配，并且是系统输出，作为"备选结果"，继续重试
+                  // 立即break循环，不需要继续重试
+                  break;
+                } else if (isSystem) {
+                  // 系统输出，作为备选结果，继续重试寻找更好的结果
                   if (!messageResult) { // 只在还没有结果时记录备选结果
                     messageResult = edge.node;
                     if (!isJsonMode) {
@@ -1320,14 +1324,6 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 }
               }
             }
-          }
-        }
-
-        // 如果找到了非系统输出结果，立即返回
-        if (messageResult && !isJsonMode) {
-          const resultData = messageResult.Output?.data || '';
-          if (!isSystemOutput(resultData)) {
-            break; // 找到Handler结果，结束重试
           }
         }
 
