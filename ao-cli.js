@@ -1248,9 +1248,10 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
         if (outputData.trim() === 'compute(base, req, opts)') return true;
 
         // AOS内部调试信息格式（Lua表格式，包含函数引用）
-        if (outputData.includes('onReply') &&
-            outputData.includes('receive') &&
-            outputData.includes('function: 0x')) {
+        // 可能是完整的：{ onReply = function: 0x..., receive = function: 0x..., output = "..." }
+        // 也可能是简化的：{ onReply = function: 0x... } 或 { receive = function: 0x... }
+        if (outputData.includes('function: 0x') &&
+            (outputData.includes('onReply') || outputData.includes('receive'))) {
           return true;
         }
 
