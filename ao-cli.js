@@ -1245,36 +1245,62 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
         const resultsResponse = await queryProcessResults(wallet, targetProcess, 50); // 查询更多结果
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
+          // 判断输出类型（基于内容特征，不依赖行数）
+          const classifyOutput = (outputData) => {
+            if (!outputData || typeof outputData !== 'string') return 'unknown';
+
+            // 系统输出模式识别
+            const systemPatterns = [
+              /^Message added to outbox$/i,  // 纯发送确认
+              /^{[\s\S]*onReply\s*=\s*function:[\s\S]*}$/,  // Lua表格式的调试信息
+              /^function:\s*0x[0-9a-f]+$/i,  // 纯函数引用
+              /^\s*compute\(base,\s*req,\s*opts\)\s*$/,  // 系统计算函数
+            ];
+
+            // 检查是否匹配系统输出模式
+            for (const pattern of systemPatterns) {
+              if (pattern.test(outputData.trim())) {
+                return 'system';
+              }
+            }
+
+            // 检查是否包含明显的函数引用（系统调试信息）
+            if (/function:\s*0x[0-9a-f]+/i.test(outputData) && outputData.trim().split('\n').length <= 3) {
+              return 'system_debug';
+            }
+
+            // 检查是否包含"Message added to outbox"但还有其他内容（可能是混合输出）
+            if (outputData.includes('Message added to outbox') && outputData.trim().length > 25) {
+              return 'mixed_system';
+            }
+
+            // 检查是否包含明显的用户业务内容
+            const hasUserContent = [
+              /print/i,  // print语句
+              /[🎯📨🔄📤✅]/,  // emoji（测试用例中常见）
+              /Handler|处理|执行|开始|完成/i,  // 中文业务描述
+              /processing|handler|executed/i,  // 英文业务描述
+              /\w{3,}/  // 有意义的英文单词
+            ].some(pattern => pattern.test(outputData));
+
+            if (hasUserContent) {
+              return 'user_business';
+            }
+
+            // 默认分类为系统输出
+            return 'system';
+          };
+
           // 判断是否为Handler处理结果（优先级最高）
           const isHandlerResult = (outputData) => {
-            if (!outputData || typeof outputData !== 'string') return false;
-
-            // Handler结果通常有以下特征：
-            // 1. 不包含"Message added to outbox"
-            // 2. 包含多行有意义的内容（非纯调试信息）
-            // 3. 通常有实际的业务逻辑输出
-
-            if (outputData.includes('Message added to outbox')) return false;
-
-            const lines = outputData.split('\n').filter(line => line.trim().length > 0);
-
-            // 如果只有很少的行数，可能是系统输出而不是业务输出
-            if (lines.length < 2) return false;
-
-            // 检查是否包含函数引用（通常是调试信息，不是业务输出）
-            const hasFunctionRefs = /function:\s*0x[0-9a-f]+/i.test(outputData);
-
-            // 如果主要是函数引用，可能是调试信息而不是业务输出
-            if (hasFunctionRefs && lines.length <= 3) return false;
-
-            // 如果有多行内容且不是纯调试信息，则认为是Handler结果
-            return lines.length >= 2 && lines.some(line => line.trim().length > 5);
+            const type = classifyOutput(outputData);
+            return type === 'user_business';
           };
 
           // 判断是否为发送操作结果（中等优先级）
           const isSendOperation = (outputData) => {
-            return outputData && typeof outputData === 'string' &&
-                   outputData.includes('Message added to outbox');
+            const type = classifyOutput(outputData);
+            return type === 'system' || type === 'system_debug' || type === 'mixed_system';
           };
 
           // 尝试通过Reference精确关联 - 在一次遍历中找到最佳和次佳匹配
