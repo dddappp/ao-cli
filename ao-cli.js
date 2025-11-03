@@ -1384,7 +1384,8 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     let foundHandlerResult = false;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      if (foundHandlerResult) break; // 如果已经找到了Handler结果，跳出外层循环
+      // 在每次迭代开始时检查是否已经找到Handler结果
+      if (foundHandlerResult) break;
 
       try {
         // 只有当baseRef有效时才显示查询信息
@@ -1421,7 +1422,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                     console.log(`   ✅ 第${attempt}次尝试成功！找到匹配的Handler处理结果`);
                     console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
                   }
-                  // 设置标志并break内层循环，外层循环会在下次迭代时检查标志并退出
+                  // 设置标志，break内层循环，外层循环会在下次迭代开始时检查并退出
                   console.log(`   🔄 调试: 找到Handler结果，设置退出标志`);
                   foundHandlerResult = true;
                   break;
@@ -1437,6 +1438,11 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 }
               }
             }
+          }
+
+          // 如果已经找到了Handler结果，跳过等待和最终检查
+          if (foundHandlerResult) {
+            continue; // 跳到外层循环检查，立即退出
           }
 
           if (attempt < maxRetries) {
