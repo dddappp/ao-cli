@@ -52,9 +52,9 @@
 - 每个步骤的Reference都是递增的
 
 #### 4. Trace功能挑战
-- Reference分配策略取决于通信模式（双进程vs单进程）
+- Reference重用策略取决于通信模式（双进程vs单进程）
+- 双进程通信重用Reference，单进程通信递增Reference
 - 需要根据通信模式选择不同的查找策略
-- 双进程通信简单，单进程通信需要扩展查找范围
 
 ### 调试工具
 
@@ -78,8 +78,8 @@ node test-cu-api-debug.js G8XryOcdv-AcyPMJa7wQ1IHbEvfmhGEDENnI6qe8U_U 20
 #### 结论
 
 Trace功能的实现揭示了AO网络的底层工作机制：
-- **通信模式决定复杂性**：双进程通信简单，单进程通信需要扩展查找
-- **Reference分配策略差异**：取决于消息在进程间的流转方式
+- **通信模式决定复杂性**：双进程通信重用Reference，单进程通信递增Reference
+- **Reference重用策略差异**：取决于消息在进程间的流转方式
 - **自适应查找策略**：Trace功能需要根据通信模式选择不同的查找方式
 - **统一的消息处理**：无论通信模式，所有步骤都被CU API完整记录
 

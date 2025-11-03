@@ -6,15 +6,15 @@
 
 基于重新分析，我们发现了Trace功能的关键问题：**Reference分配策略取决于通信模式**！
 
-#### Reference分配策略差异
+#### Reference重用策略差异
 **双进程通信**（我们的成功测试）：
-- 发送进程：获得Reference=N
-- 接收进程：**直接获得相同的Reference=N**
+- 发送消息：获得Reference=N
+- 响应消息：**重用Reference=N**（碰巧相等）
 - Trace查询Reference=N：直接获得Handler输出 ✅
 
 **单进程通信**（用户的失败用例）：
-- 发送进程：获得Reference=N（系统操作）
-- Handler处理：获得Reference=N+1（业务处理）
+- 发送消息：获得Reference=N
+- 响应消息：获得Reference=N+1（递增）
 - Trace查询Reference=N：获得系统输出，需要扩展查找Reference=N+1 ❌
 
 #### 技术问题
