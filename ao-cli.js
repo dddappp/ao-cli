@@ -1232,40 +1232,91 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       console.log(`   🔗 消息Reference: ${messageReference}`);
     }
 
-    // 简化方案：查找Reference = N, N+1, N+2（最多3个值）
+    // 扩展查找：Reference = N, N+1, N+2（最多3个值）
     const baseRef = parseInt(messageReference);
     const candidates = [baseRef, baseRef + 1, baseRef + 2];
+
+    // 保留重试机制，避免API限流（经验值）
+    const maxRetries = 12; // 每个Reference最多重试12次
+    const retryDelay = 8000; // 8秒间隔，避免CU API频率限制
+
+    const isSystemOutput = (outputData) => {
+      if (!outputData) return false;
+
+      // 处理不同格式的数据
+      let dataString;
+      if (typeof outputData === 'string') {
+        dataString = outputData;
+      } else if (typeof outputData === 'object') {
+        // 如果是对象，转换为字符串进行检查
+        dataString = JSON.stringify(outputData);
+      } else {
+        return false;
+      }
+
+      // 清理ANSI颜色代码后检查（处理AOS终端着色输出）
+      const cleanData = dataString.replace(/\u001b\[[0-9;]*m/g, '');
+      if (cleanData.includes('function: 0x')
+        && cleanData.includes('output')
+        && cleanData.includes('Message added to outbox')
+      ) {
+        return true;
+      }
+
+      return false;
+    };
 
     if (!isJsonMode) {
       console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}, ${messageReference}+1, ${messageReference}+2关联处理结果...`);
     }
 
-    // 尝试查找匹配结果
+    // 对每个候选Reference进行查找（带重试）
     for (const ref of candidates) {
-      try {
-        const resultsResponse = await queryProcessResults(wallet, targetProcess, 25);
+      if (!isJsonMode) {
+        console.log(`   🔍 查找Reference=${ref}...`);
+      }
 
-        if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          // 使用质量评估选择最佳结果
-          const bestResult = selectBestTraceResult(resultsResponse.edges, ref.toString());
+      // 每个Reference的重试循环
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const resultsResponse = await queryProcessResults(wallet, targetProcess, 25);
 
-          if (bestResult) {
-            messageResult = bestResult.node;
-            if (!isJsonMode) {
-              const resultType = assessOutputQuality(bestResult.node.Output?.data || '');
-              console.log(`   ✅ 找到Reference=${ref}的最佳处理结果 (${getQualityDescription(resultType)})`);
+          if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
+            // 使用质量评估选择最佳结果
+            const bestResult = selectBestTraceResult(resultsResponse.edges, ref.toString());
+
+            if (bestResult) {
+              messageResult = bestResult.node;
+              if (!isJsonMode) {
+                const quality = assessOutputQuality(bestResult.node.Output?.data || '');
+                console.log(`   ✅ 第${attempt}次尝试成功！找到Reference=${ref}的最佳处理结果 (${getQualityDescription(quality)})`);
+              }
+              break; // 找到结果后停止这个Reference的查找
             }
-            break; // 找到结果后停止查找
+          }
+
+          // 如果是最后一次尝试，记录失败
+          if (attempt === maxRetries && !isJsonMode) {
+            console.log(`   📭 Reference=${ref}未找到匹配结果`);
+          }
+
+        } catch (error) {
+          if (attempt === maxRetries && !isJsonMode) {
+            console.log(`   📡 Reference=${ref}查询失败: ${error.message}`);
           }
         }
-      } catch (error) {
-        if (!isJsonMode) {
-          console.log(`   ⚠️ 查询Reference=${ref}失败: ${error.message}`);
+
+        // 在重试之间等待
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
 
-      // 在查询不同Reference之间添加短暂延迟
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 如果已经找到结果，停止查找其他Reference
+      if (messageResult) break;
+
+      // 在不同Reference之间添加短暂延迟
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     if (!messageResult && !isJsonMode) {
