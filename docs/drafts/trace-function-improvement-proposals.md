@@ -2,7 +2,20 @@
 
 ## 现状分析
 
-基于调试分析，我们发现Trace功能的核心问题是**Reference匹配过于严格**，导致无法找到相关的业务消息处理记录。
+### 🎯 核心发现：CU API数据记录策略差异
+
+基于调试分析，我们发现了Trace功能成败的真正原因：**CU API对不同新鲜度的进程采用不同的数据记录策略**！
+
+#### 数据记录策略差异
+- **新鲜进程**：完整记录消息处理历史，包括Handler print输出
+- **老化进程**：仅记录状态摘要（如Inbox长度），丢失详细处理记录
+
+#### 技术问题
+虽然CU API记录了完整的消息处理历史（新鲜进程），但当前的Trace实现存在以下缺陷：
+
+- **Reference匹配过于严格**：只查找发送消息的Reference，错过了Handler处理产生的相关记录
+- **数据可用性假设错误**：假设所有进程都有完整的历史记录（实际并非如此）
+- **缺乏适应性**：没有根据进程状态调整查找策略
 
 ## 问题根因
 
@@ -243,13 +256,64 @@ describe('Trace Message Matching', () => {
 - 测试不同类型的Handler输出
 - 验证边界情况处理
 
+## 适应性策略
+
+### 进程新鲜度检测
+
+为了适应CU API的数据记录策略差异，Trace功能需要实现进程状态检测：
+
+```javascript
+function detectProcessFreshness(processId) {
+  // 查询最近的处理记录
+  const recentRecords = await queryProcessResults(processId, { limit: 5 });
+
+  // 检测是否包含详细消息记录
+  const hasDetailedMessages = recentRecords.edges.some(edge =>
+    edge.node.Messages && edge.node.Messages.length > 0
+  );
+
+  // 检测Output数据复杂度
+  const hasComplexOutput = recentRecords.edges.some(edge =>
+    edge.node.Output?.data &&
+    typeof edge.node.Output.data === 'string' &&
+    edge.node.Output.data.length > 10 &&
+    !/^\d+$/.test(edge.node.Output.data.trim())
+  );
+
+  return {
+    isFresh: hasDetailedMessages && hasComplexOutput,
+    hasMessageHistory: hasDetailedMessages,
+    hasComplexOutput: hasComplexOutput
+  };
+}
+```
+
+### 自适应查找策略
+
+```javascript
+function getAdaptiveSearchStrategy(processFreshness) {
+  if (processFreshness.isFresh) {
+    // 新鲜进程：使用完整Reference扩展匹配
+    return 'extended_reference_matching';
+  } else if (processFreshness.hasMessageHistory) {
+    // 部分新鲜进程：使用Reference扩展匹配
+    return 'reference_matching';
+  } else {
+    // 老化进程：提供状态摘要和建议
+    return 'status_summary_with_advice';
+  }
+}
+```
+
 ## 部署计划
 
-1. **Phase 1**: 实现基础的Reference扩展匹配
-2. **测试验证**: 在测试环境中验证改进效果
-3. **Phase 2**: 实现完整的内容评分系统
-4. **性能优化**: 确保查询效率不受影响
-5. **文档更新**: 更新Trace功能的使用说明
+1. **Phase 1**: 实现进程新鲜度检测机制
+2. **Phase 2**: 实现基础的Reference扩展匹配
+3. **Phase 3**: 添加自适应查找策略
+4. **测试验证**: 在不同新鲜度的进程上验证改进效果
+5. **Phase 4**: 实现完整的内容评分系统
+6. **性能优化**: 确保查询效率不受影响
+7. **文档更新**: 更新Trace功能的使用说明和限制说明
 
 ---
 
