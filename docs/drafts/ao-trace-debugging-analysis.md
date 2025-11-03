@@ -317,6 +317,8 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 **为什么Trace不能直接使用X-Reference**：
 CU API只存储最终的消息记录（Reference），不存储运行时的匹配标签（X-Reference）。
 
+**简化解决方案**：直接查找Reference = N, N+1, N+2（最多3个值）+ 质量评估
+
 **Reference分配策略**：
 - 双进程通信：响应消息重用原始Reference
 - 单进程通信：响应消息获得递增的Reference
