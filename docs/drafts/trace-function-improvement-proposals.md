@@ -2,21 +2,27 @@
 
 ## 现状分析
 
-### 🎯 核心发现：Reference递增机制和查找缺陷
+### 🎯 核心发现：通信模式决定Reference分配策略
 
-基于重新分析，我们发现了Trace功能的关键问题：**Reference是递增的，但查找逻辑只找原始Reference**！
+基于重新分析，我们发现了Trace功能的关键问题：**Reference分配策略取决于通信模式**！
 
-#### Reference递增机制
-- **发送消息**：获得Reference=N，CU记录系统输出
-- **Handler处理**：获得Reference=N+1，CU记录业务输出
-- **响应生成**：可能获得Reference=N+2，记录响应消息
+#### Reference分配策略差异
+**双进程通信**（我们的成功测试）：
+- 发送进程：获得Reference=N
+- 接收进程：**直接获得相同的Reference=N**
+- Trace查询Reference=N：直接获得Handler输出 ✅
+
+**单进程通信**（用户的失败用例）：
+- 发送进程：获得Reference=N（系统操作）
+- Handler处理：获得Reference=N+1（业务处理）
+- Trace查询Reference=N：获得系统输出，需要扩展查找Reference=N+1 ❌
 
 #### 技术问题
-CU API记录了完整的消息处理历史，但Trace的查找逻辑有缺陷：
+CU API记录了完整的消息处理历史，但Trace的查找逻辑没有考虑通信模式的差异：
 
-- **Reference匹配过于严格**：只查找发送消息的Reference=N
-- **错过Handler输出**：Handler的详细输出在Reference=N+1中
-- **查找范围不足**：没有扩展到相关的后续Reference
+- **查找策略单一**：只查找原始Reference，没有根据通信模式调整
+- **双进程场景简单**：接收进程直接获得业务Reference
+- **单进程场景复杂**：需要查找递增的Reference序列
 
 ## 问题根因
 
@@ -259,38 +265,55 @@ describe('Trace Message Matching', () => {
 
 ## 改进策略
 
-### Reference扩展匹配
+### 通信模式自适应查找
 
-实现查找原始Reference及其后续Reference的逻辑：
+实现根据通信模式选择不同查找策略的逻辑：
 
 ```javascript
-function findRelatedReferences(baseReference, records) {
-  const baseRefNum = parseInt(baseReference);
-  const relatedRefs = new Set();
+function getAdaptiveTraceStrategy(baseReference, targetProcessId, senderProcessId) {
+  const isCrossProcess = targetProcessId !== senderProcessId;
 
-  // 查找基础Reference和后续Reference
-  records.forEach(record => {
-    record.node.Messages?.forEach(msg => {
-      const refTag = msg.Tags?.find(tag => tag.name === 'Reference');
-      if (refTag) {
-        const refNum = parseInt(refTag.value);
-        // 包含基础Reference和后续的几个Reference
-        if (refNum >= baseRefNum && refNum <= baseRefNum + 5) {
-          relatedRefs.add(refTag.value);
-        }
-      }
-    });
-  });
+  if (isCrossProcess) {
+    // 双进程通信：直接查找原始Reference（通常就是Handler输出）
+    return {
+      references: [baseReference],
+      strategy: 'direct_lookup',
+      description: '双进程通信，直接查找原始Reference'
+    };
+  } else {
+    // 单进程通信：查找原始Reference和后续Reference
+    const baseRefNum = parseInt(baseReference);
+    const references = [];
+    for (let i = 0; i <= 5; i++) {
+      references.push((baseRefNum + i).toString());
+    }
 
-  return Array.from(relatedRefs).sort();
+    return {
+      references: references,
+      strategy: 'extended_lookup',
+      description: '单进程通信，查找Reference序列以找到Handler输出'
+    };
+  }
 }
 ```
 
-### 输出质量评估
+### 输出质量评估和选择
 
-对找到的记录进行质量排序：
+对找到的记录进行质量排序，优先选择Handler输出：
 
 ```javascript
+function selectBestTraceResult(records) {
+  const scoredResults = records.map(record => ({
+    record,
+    score: rankOutputQuality(record)
+  }));
+
+  // 按质量分数排序（Handler > System > Other > Empty）
+  scoredResults.sort((a, b) => b.score - a.score);
+
+  return scoredResults[0]?.record;
+}
+
 function rankOutputQuality(record) {
   const output = record.node.Output?.data || '';
 
@@ -298,31 +321,31 @@ function rankOutputQuality(record) {
   if (typeof output === 'string' && output.length > 50 &&
       !output.includes('function: 0x') &&
       !output.includes('Message added to outbox')) {
-    return { quality: 'handler', score: 100 };
+    return 100; // Handler output
   }
 
   // 系统输出（中等优先级）
   if (output.includes('Message added to outbox')) {
-    return { quality: 'system', score: 50 };
+    return 50; // System output
   }
 
   // 其他输出（低优先级）
   if (typeof output === 'string' && output.trim()) {
-    return { quality: 'other', score: 10 };
+    return 10; // Other content
   }
 
   // 空输出（最低优先级）
-  return { quality: 'empty', score: 0 };
+  return 0; // Empty
 }
 ```
 
 ## 部署计划
 
-1. **Phase 1**: 实现Reference扩展匹配（查找Reference=N, N+1, N+2等）
-2. **Phase 2**: 优化查找逻辑（优先选择Handler输出而非系统输出）
-3. **Phase 3**: 改进时序处理（确保在Handler处理完成后进行查询）
-4. **测试验证**: 在单进程和双进程场景下验证改进效果
-5. **Phase 4**: 实现完整的内容评分系统
+1. **Phase 1**: 实现通信模式检测（区分双进程vs单进程通信）
+2. **Phase 2**: 实现自适应查找策略（根据通信模式选择查找方式）
+3. **Phase 3**: 优化输出质量评估（Handler > System > Other优先级）
+4. **测试验证**: 在双进程和单进程场景下验证改进效果
+5. **Phase 4**: 改进时序处理（确保Handler处理完成后进行查询）
 6. **性能优化**: 确保查询效率不受影响
 7. **文档更新**: 更新Trace功能的使用说明和技术细节
 

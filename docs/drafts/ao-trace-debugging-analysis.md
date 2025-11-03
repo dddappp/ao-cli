@@ -210,9 +210,14 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 ```
 
 **双进程场景特点**:
-- ✅ 发送进程：记录消息发送过程
-- ✅ 接收进程：记录Handler业务处理过程
-- ✅ Trace查询接收进程：获得完整的Handler输出
+- ✅ 发送进程：记录消息发送过程 (Reference=N)
+- ✅ 接收进程：**直接获得消息的原始Reference** (Reference=N)
+- ✅ Trace查询接收进程Reference=N：**直接获得Handler输出**
+
+**单进程场景特点**:
+- ✅ 系统操作：记录消息发送过程 (Reference=N)
+- ✅ Handler处理：获得递增的Reference (Reference=N+1)
+- ✅ Trace查询Reference=N：获得系统输出，需要查询Reference=N+1获得Handler输出
 
 #### 失败用例分析（单进程场景）
 
@@ -254,15 +259,22 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 
 **问题根源**：**Trace的查找逻辑有缺陷，没有找到Reference=9的Handler输出记录**！
 
-#### 真正的根本原因
+#### 真正的根本原因：Reference分配策略差异
 
-用户的质疑完全正确！流程确实是相同的：
-1. eval发送消息给自己，获得Reference=8
-2. 系统记录消息，Reference=8，Output为系统格式
-3. Handler处理消息，获得新的Reference=9
-4. 业务记录消息，Reference=9，Output为Handler详细日志
+用户的质疑完全正确！Reference分配策略取决于通信模式：
 
-**Trace功能的问题**：只查找Reference=8，没有查找相关的Reference=9！
+**双进程通信**：
+1. 发送进程：eval发送消息，获得Reference=2
+2. 接收进程：**直接获得相同的Reference=2**
+3. Trace查询Reference=2：直接获得Handler输出 ✅
+
+**单进程通信**：
+1. NFT进程：eval发送消息给自己，获得Reference=8
+2. 系统记录：Reference=8，Output为系统格式
+3. Handler处理：**获得递增的Reference=9**，Output为业务日志
+4. Trace查询Reference=8：获得系统输出，需要查询Reference=9获得Handler输出 ❌
+
+**这就是为什么有的进程不需要扩展查找就能成功的原因！**
 
 #### Reference机制解析
 
@@ -344,25 +356,32 @@ const isHandlerOutput = (outputData) => {
 
 ### 🎯 核心发现
 
-**最关键的发现**：CU API记录了完整的消息处理历史，Trace功能的问题是查找逻辑缺陷！
+**最关键的发现**：Reference分配策略取决于通信模式，导致查找复杂度差异！
 
 #### 真正的核心问题
-- **CU API数据完整性**：实际上记录了所有消息处理历史，包括单进程通信的Handler输出
-- **Reference递增机制**：每个处理步骤获得新的Reference编号（8→9→10...）
-- **Trace查找缺陷**：只查找原始Reference，没有查找相关的后续Reference
+- **通信模式差异**：双进程 vs 单进程通信的Reference分配策略不同
+- **双进程通信**：接收进程直接获得原始Reference，查找简单
+- **单进程通信**：系统和Handler分别获得不同的Reference，查找复杂
+- **Trace查找缺陷**：没有根据通信模式调整查找策略
 
-#### 消息处理流程（统一的）
-1. **发送阶段**：eval发送消息 → Reference=N
-2. **系统记录**：CU记录发送操作 → Reference=N，Output=系统格式
-3. **Handler处理**：业务逻辑执行 → Reference=N+1，Output=Handler详细日志
-4. **响应生成**：生成回复消息 → 可能更多Reference
+#### Reference分配策略
+**双进程通信**：
+1. 发送进程：eval发送消息 → Reference=N
+2. 接收进程：**直接获得Reference=N** → Handler输出
+3. Trace查询Reference=N：直接成功 ✅
+
+**单进程通信**：
+1. 发送进程：eval发送消息给自己 → Reference=N
+2. 系统记录：Reference=N → 系统输出
+3. Handler处理：**获得Reference=N+1** → Handler输出
+4. Trace查询Reference=N：找到系统输出，需要扩展查找Reference=N+1 ❌
 
 ### 💡 技术启示
 
-- **Reference是递增的**：每个处理步骤获得独立的Reference编号
-- **单进程通信也是完整的**：CU API记录了所有步骤的输出
-- **Trace需要扩展查找**：不仅要找原始Reference，还要找相关的后续Reference
-- **通信模式不影响记录**：无论是单进程还是双进程，CU API都记录完整历史
+- **通信模式决定复杂性**：双进程简单，单进程需要扩展查找
+- **Reference分配策略差异**：取决于消息在进程间的流转方式
+- **Trace需要自适应**：根据通信模式选择不同的查找策略
+- **统一的消息处理**：无论通信模式，所有步骤都被CU API完整记录
 
 ### 🔧 未来改进方向
 
