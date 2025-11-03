@@ -294,9 +294,9 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 
 **消息处理流程中的Reference分配**：
 
-**双进程通信**：
-1. 发送消息 → `Reference: N`
-2. 响应消息 → `Reference: N` (重用)
+**双进程通信**（接收进程视角）：
+1. 系统记录收到消息 → `Reference: N`
+2. Handler处理并响应 → `Reference: N` (重用)，`Output: Handler输出`
 
 **单进程通信**：
 1. 发送消息 → `Reference: N`

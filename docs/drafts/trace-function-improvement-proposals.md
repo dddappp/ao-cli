@@ -7,14 +7,15 @@
 经过验证，CU API中**不存在X-Reference标签**！之前的分析错误地"发明"了这个概念。
 
 #### Reference分配策略差异（已澄清）
-**双进程通信**（成功用例）：
-- 发送消息：获得Reference=N
-- 响应消息：**重用Reference=N**（碰巧相等）
+**双进程通信**（接收进程视角）：
+- 系统记录收到消息：获得Reference=N
+- Handler处理并响应：**重用Reference=N**（碰巧相等）
 - Trace查询Reference=N：直接获得Handler输出 ✅
 
-**单进程通信**（失败用例）：
+**单进程通信**（自身进程视角）：
 - 发送消息：获得Reference=N
-- 响应消息：获得Reference=N+1（递增）
+- 系统响应：获得Reference=N
+- Handler响应：获得Reference=N+1（递增）
 - Trace查询Reference=N：获得系统输出，需要扩展查找Reference=N+1 ❌
 
 #### 技术问题
