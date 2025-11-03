@@ -400,16 +400,17 @@ const isHandlerOutput = (outputData) => {
 - **单进程通信**：响应消息获得递增Reference，查找复杂
 - **Trace查找缺陷**：没有根据通信模式调整查找策略
 
-#### Reference分配策略
-**双进程通信**：
-1. 发送进程：eval发送消息 → Reference=N
-2. 接收进程：**直接获得Reference=N** → Handler输出
-3. Trace查询Reference=N：直接成功 ✅
+#### Reference分配策略（经过验证）
 
-**单进程通信**：
-1. 发送进程：eval发送消息给自己 → Reference=N
-2. 系统记录：Reference=N → 系统输出
-3. Handler处理：**获得Reference=N+1** → Handler输出
+**双进程通信**（接收进程视角）：
+1. 系统记录收到消息 → Reference=N
+2. Handler处理并响应 → Reference=N（重用）→ Handler输出
+3. Trace查询Reference=N：直接找到Handler输出 ✅
+
+**单进程通信**（自身进程视角）：
+1. 发送消息：eval发送给自己 → Reference=N
+2. 系统响应：Reference=N → 系统输出
+3. Handler响应：Reference=N+1（递增）→ Handler输出
 4. Trace查询Reference=N：找到系统输出，需要扩展查找Reference=N+1 ❌
 
 ### 💡 技术启示
@@ -418,6 +419,26 @@ const isHandlerOutput = (outputData) => {
 - **Reference分配策略差异**：取决于消息在进程间的流转方式
 - **Trace需要自适应**：根据通信模式选择不同的查找策略
 - **统一的消息处理**：无论通信模式，所有步骤都被CU API完整记录
+
+### 🔍 经过验证的关键事实
+
+**✅ 已确认的事实**：
+1. **X-Reference标签不存在**：CU API中只有Reference标签，没有关联标签
+2. **Reference重用策略**：
+   - 双进程通信：接收进程重用原始Reference（直接获得Handler输出）
+   - 单进程通信：Handler获得递增Reference（需要扩展查找）
+3. **Trace查询目标**：Trace总是查询目标进程的CU记录
+4. **通信模式差异**：双进程 vs 单进程导致不同的Reference分配策略
+
+**❌ 已纠正的错误概念**：
+1. X-Reference关联标签（不存在，之前错误发明）
+2. 所有通信模式都遵循相同流程（实际有差异）
+3. Reference总是递增（实际有重用策略）
+
+**🎯 核心解决方案**：
+1. **直接匹配**：查找Reference等于目标值的记录
+2. **递增匹配**：查找Reference在目标值附近递增的记录
+3. **质量评估**：优先选择Handler输出而不是系统输出
 
 ### 🔧 未来改进方向
 

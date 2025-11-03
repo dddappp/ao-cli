@@ -47,9 +47,9 @@
 - 长时间运行的进程可能只记录状态摘要
 
 #### 3. Reference机制
-- 每个消息处理步骤获得独立的Reference编号
-- 发送消息 → 系统记录 → Handler处理 → 响应生成
-- 每个步骤的Reference都是递增的
+- 消息处理步骤的Reference分配取决于通信模式
+- 双进程通信：接收进程重用原始Reference
+- 单进程通信：Handler获得递增的Reference
 
 #### 4. Trace功能挑战
 - Reference重用策略取决于通信模式（双进程vs单进程）
