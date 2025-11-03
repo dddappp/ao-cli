@@ -278,12 +278,26 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 
 #### Reference机制解析
 
-**关键洞察**：每个消息处理步骤都会获得新的Reference编号！
+**关键洞察**：Reference字段有两种语义，取决于标签名称！
 
-1. **原始发送**：eval发送消息 → `Reference: 8`
-2. **系统处理**：AO 记录系统消息 → `Reference: 8`
-3. **业务处理**：Handler处理业务逻辑 → `Reference: 9`
-4. **响应生成**：Handler生成响应消息 → `Reference: 9`
+**Reference标签的语义**：
+
+1. **`Reference`**: 新消息本身的标识符（消息ID）
+   - 每个新消息获得递增的Reference编号
+   - 用于唯一标识这条消息
+
+2. **`X-Reference`**: 指向被处理的消息（关联关系）
+   - 指向该消息所响应的原始消息
+   - 用于建立消息间的因果关系
+
+**消息处理流程中的Reference分配**：
+
+1. **原始发送**：eval发送消息 → `Reference: 8` (新消息ID)
+2. **系统处理**：AO记录系统消息 → `Reference: 8` (同一条消息)
+3. **业务处理**：Handler处理后生成响应 → `Reference: 9` (新消息ID), `X-Reference: 8` (指向原始消息)
+4. **响应生成**：Handler生成响应消息 → `Reference: 9` (响应消息ID)
+
+**这就是为什么查找策略复杂的原因**！
 
 #### Trace功能设计缺陷
 
@@ -297,7 +311,12 @@ const hasMatchingReference = edge.node.Messages.some(msg =>
 );
 ```
 
-**问题**：它只查找与原始发送Reference（8）匹配的记录，但真正的Handler输出记录在不同的Reference（9）下。
+**问题**：它只查找`Reference`标签匹配的记录，**完全忽略了`X-Reference`关联关系**！
+
+**正确的查找策略应该包括**：
+1. **主查找**：查找`Reference`等于目标值的消息（直接匹配）
+2. **关联查找**：查找`X-Reference`等于目标值的消息（响应消息）
+3. **扩展查找**：查找Reference在目标值附近的递增序列
 
 ## 解决方案探索
 

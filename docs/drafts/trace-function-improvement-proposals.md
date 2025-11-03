@@ -265,35 +265,61 @@ describe('Trace Message Matching', () => {
 
 ## 改进策略
 
-### 通信模式自适应查找
+### 增强Reference关联查找
 
-实现根据通信模式选择不同查找策略的逻辑：
+实现支持多种Reference关联关系的查找逻辑：
 
 ```javascript
-function getAdaptiveTraceStrategy(baseReference, targetProcessId, senderProcessId) {
-  const isCrossProcess = targetProcessId !== senderProcessId;
+function findTraceResults(baseReference, records) {
+  const results = [];
 
-  if (isCrossProcess) {
-    // 双进程通信：直接查找原始Reference（通常就是Handler输出）
-    return {
-      references: [baseReference],
-      strategy: 'direct_lookup',
-      description: '双进程通信，直接查找原始Reference'
-    };
-  } else {
-    // 单进程通信：查找原始Reference和后续Reference
-    const baseRefNum = parseInt(baseReference);
-    const references = [];
-    for (let i = 0; i <= 5; i++) {
-      references.push((baseRefNum + i).toString());
-    }
+  records.forEach(record => {
+    const messages = record.node.Messages || [];
 
-    return {
-      references: references,
-      strategy: 'extended_lookup',
-      description: '单进程通信，查找Reference序列以找到Handler输出'
-    };
-  }
+    messages.forEach(message => {
+      const tags = message.Tags || [];
+      let matchType = null;
+      let matchScore = 0;
+
+      // 1. 直接Reference匹配（最高优先级）
+      const refTag = tags.find(t => t.name === 'Reference' && t.value === baseReference);
+      if (refTag) {
+        matchType = 'direct_reference';
+        matchScore = 100;
+      }
+
+      // 2. X-Reference关联匹配（高优先级）
+      const xRefTag = tags.find(t => t.name === 'X-Reference' && t.value === baseReference);
+      if (xRefTag && !matchType) {
+        matchType = 'x_reference';
+        matchScore = 90;
+      }
+
+      // 3. 递增Reference匹配（中等优先级）
+      const refTag2 = tags.find(t => t.name === 'Reference');
+      if (refTag2 && !matchType) {
+        const refNum = parseInt(refTag2.value);
+        const baseNum = parseInt(baseReference);
+        if (refNum > baseNum && refNum <= baseNum + 5) {
+          matchType = 'incremental_reference';
+          matchScore = 50 + (baseNum + 5 - refNum) * 5; // 越接近越优先
+        }
+      }
+
+      if (matchType) {
+        results.push({
+          record,
+          message,
+          matchType,
+          matchScore,
+          output: record.node.Output?.data || ''
+        });
+      }
+    });
+  });
+
+  // 按匹配分数排序
+  return results.sort((a, b) => b.matchScore - a.matchScore);
 }
 ```
 
@@ -341,11 +367,11 @@ function rankOutputQuality(record) {
 
 ## 部署计划
 
-1. **Phase 1**: 实现通信模式检测（区分双进程vs单进程通信）
-2. **Phase 2**: 实现自适应查找策略（根据通信模式选择查找方式）
-3. **Phase 3**: 优化输出质量评估（Handler > System > Other优先级）
-4. **测试验证**: 在双进程和单进程场景下验证改进效果
-5. **Phase 4**: 改进时序处理（确保Handler处理完成后进行查询）
+1. **Phase 1**: 实现增强Reference关联查找（支持Reference、X-Reference、递增Reference）
+2. **Phase 2**: 实现匹配结果评分和排序（Handler > System > Other优先级）
+3. **Phase 3**: 优化时序处理（确保Handler处理完成后进行查询）
+4. **测试验证**: 在各种通信模式和Reference关联场景下验证改进效果
+5. **Phase 4**: 实现通信模式自适应（根据场景选择最优查找策略）
 6. **性能优化**: 确保查询效率不受影响
 7. **文档更新**: 更新Trace功能的使用说明和技术细节
 
