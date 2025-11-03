@@ -280,26 +280,42 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 
 #### Reference机制解析
 
-**关键洞察**：Reference字段有两种语义，取决于标签名称！
+**关键洞察**：Reference字段的语义需要重新审视！
 
-**Reference标签的语义**：
+**当前发现的Reference行为**：
 
-1. **`Reference`**: 新消息本身的标识符（消息ID）
-   - 每个新消息获得递增的Reference编号
-   - 用于唯一标识这条消息
+1. **Reference标签**：消息的标识符
+   - 每个消息获得Reference编号
+   - 在不同通信模式下分配策略不同
 
-2. **`X-Reference`**: 指向被处理的消息（关联关系）
-   - 指向该消息所响应的原始消息
-   - 用于建立消息间的因果关系
+2. **Reference重用 vs 递增**：
+   - 双进程通信：响应消息可能重用原始Reference
+   - 单进程通信：响应消息获得递增的Reference
 
 **消息处理流程中的Reference分配**：
 
-1. **原始发送**：eval发送消息 → `Reference: 8` (新消息ID)
-2. **系统处理**：AO记录系统消息 → `Reference: 8` (同一条消息)
-3. **业务处理**：Handler处理后生成响应 → `Reference: 9` (新消息ID), `X-Reference: 8` (指向原始消息)
-4. **响应生成**：Handler生成响应消息 → `Reference: 9` (响应消息ID)
+**双进程通信**：
+1. 发送消息 → `Reference: N`
+2. 响应消息 → `Reference: N` (重用)
 
-**这就是为什么查找策略复杂的原因**！
+**单进程通信**：
+1. 发送消息 → `Reference: N`
+2. 系统响应 → `Reference: N`
+3. Handler响应 → `Reference: N+1` (递增)
+
+**澄清**：经过验证，CU API数据中**不存在X-Reference标签**！
+
+**我之前的分析错误地"发明"了X-Reference概念**，以为响应消息应该有一个指向原始消息的标签。
+
+**实际情况**：CU API只包含Reference标签，每个消息只有一个Reference值，没有X-Reference关联标签。
+
+**Reference分配策略**：
+- 双进程通信：响应消息重用原始Reference
+- 单进程通信：响应消息获得递增的Reference
+
+**Trace查找策略**：
+1. 先查找原始Reference（双进程适用）
+2. 再查找递增的Reference序列（单进程适用）
 
 #### Trace功能设计缺陷
 
@@ -313,12 +329,11 @@ const hasMatchingReference = edge.node.Messages.some(msg =>
 );
 ```
 
-**问题**：它只查找`Reference`标签匹配的记录，**完全忽略了`X-Reference`关联关系**！
+**问题**：它只查找`Reference`标签匹配的记录，没有考虑Reference分配策略的差异！
 
 **正确的查找策略应该包括**：
-1. **主查找**：查找`Reference`等于目标值的消息（直接匹配）
-2. **关联查找**：查找`X-Reference`等于目标值的消息（响应消息）
-3. **扩展查找**：查找Reference在目标值附近的递增序列
+1. **直接查找**：查找`Reference`等于目标值的消息（双进程适用）
+2. **递增查找**：查找`Reference`在目标值附近的递增序列（单进程适用）
 
 ## 解决方案探索
 
