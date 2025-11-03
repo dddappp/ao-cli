@@ -1232,134 +1232,46 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       console.log(`   🔗 消息Reference: ${messageReference}`);
     }
 
-    // 尝试通过Reference精确关联消息处理结果
-    const maxRetries = 12;
-    const retryDelay = 8000; // 8秒间隔，避免CU API频率限制
+    // 简化方案：查找Reference = N, N+1, N+2（最多3个值）
+    const baseRef = parseInt(messageReference);
+    const candidates = [baseRef, baseRef + 1, baseRef + 2];
 
-    const isSystemOutput = (outputData) => {
-      if (!outputData) return false;
+    if (!isJsonMode) {
+      console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}, ${messageReference}+1, ${messageReference}+2关联处理结果...`);
+    }
 
-      // 处理不同格式的数据
-      let dataString;
-      if (typeof outputData === 'string') {
-        dataString = outputData;
-      } else if (typeof outputData === 'object') {
-        // 如果是对象，转换为字符串进行检查
-        dataString = JSON.stringify(outputData);
-      } else {
-        return false;
-      }
-
-      /*
-      ┌─────────────────────────────────────────────────────────────┐
-      │ {
-      │    onReply = function: 0x41ce1c0,
-      │    receive = function: 0x4113820,
-      │    output = "Message added to outbox"
-      │ }
-      └─────────────────────────────────────────────────────────────┘
-      */
-      if (dataString.includes('function: 0x')
-        && dataString.includes('output')
-        && dataString.includes('Message added to outbox')
-      ) {
-        return true;
-      }
-
-      // 清理ANSI颜色代码后重新检查（处理AOS终端着色输出）
-      const cleanData = dataString.replace(/\u001b\[[0-9;]*m/g, '');
-      if (cleanData.includes('function: 0x')
-        && cleanData.includes('output')
-        && cleanData.includes('Message added to outbox')
-      ) {
-        return true;
-      }
-
-      return false;
-    };
-    // 简化逻辑：按注释要求实现
-    let foundHandlerResult = false;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      if (foundHandlerResult) break; // 如果已经找到了Handler结果，跳出外层循环
-
+    // 尝试查找匹配结果
+    for (const ref of candidates) {
       try {
-        if (!isJsonMode && attempt === 1) {
-          console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}关联处理结果 (最多尝试 ${maxRetries} 次)...`);
-        }
-
-        const resultsResponse = await queryProcessResults(wallet, targetProcess, 50);
+        const resultsResponse = await queryProcessResults(wallet, targetProcess, 25);
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          for (const edge of resultsResponse.edges) {
-            if (edge.node && edge.node.Messages && Array.isArray(edge.node.Messages)) {
-              const hasMatchingReference = edge.node.Messages.some(msg =>
-                msg.Tags && msg.Tags.some(tag =>
-                  tag.name === 'Reference' && tag.value === messageReference
-                )
-              );
+          // 使用质量评估选择最佳结果
+          const bestResult = selectBestTraceResult(resultsResponse.edges, ref.toString());
 
-              if (hasMatchingReference) {
-                const outputData = edge.node.Output?.data || '';
-
-                // 只调用一次 isSystemOutput，避免重复计算
-                const isSystem = isSystemOutput(outputData);
-
-                if (!isSystem && outputData.trim().length > 0) {
-                  // 找到了Handler结果，立即返回
-                  messageResult = edge.node;
-                  if (!isJsonMode) {
-                    console.log(`   ✅ 第${attempt}次尝试成功！找到Reference=${messageReference}的Handler处理结果`);
-                    console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
-                  }
-                  // 设置标志并break内层循环，外层循环会在下次迭代时检查标志并退出
-                  console.log(`   🔄 调试: 找到Handler结果，设置退出标志`);
-                  foundHandlerResult = true;
-                  break;
-                } else if (isSystem) {
-                  // 系统输出，作为备选结果，继续重试寻找更好的结果
-                  if (!messageResult) { // 只在还没有结果时记录备选结果
-                    messageResult = edge.node;
-                    if (!isJsonMode) {
-                      console.log(`   📝 第${attempt}次尝试找到Reference=${messageReference}的系统输出（备选结果），继续重试寻找Handler结果...`);
-                    }
-                    // 继续重试，不在这里返回
-                  }
-                }
-              }
+          if (bestResult) {
+            messageResult = bestResult.node;
+            if (!isJsonMode) {
+              const resultType = assessOutputQuality(bestResult.node.Output?.data || '');
+              console.log(`   ✅ 找到Reference=${ref}的最佳处理结果 (${getQualityDescription(resultType)})`);
             }
-          }
-        }
-
-        if (attempt < maxRetries) {
-          if (!isJsonMode) {
-            console.log(`   ⏳ 第${attempt}次尝试未找到满意结果，等待 ${retryDelay}ms 后重试...`);
-          }
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
-        } else {
-          if (!isJsonMode) {
-            if (messageResult) {
-              console.log(`   ✅ 经过${attempt}次尝试，使用备选结果：系统输出`);
-              console.log(`   🔍 结果类型：系统输出结果`);
-            } else {
-              console.log(`   📭 经过 ${maxRetries} 次尝试，未找到与Reference=${messageReference}关联的处理结果`);
-              console.log(`   💡 可能原因：消息尚未被处理、处理结果尚未记录到链上、或CU API限制`);
-            }
+            break; // 找到结果后停止查找
           }
         }
       } catch (error) {
-        if (attempt === maxRetries) {
-          if (!isJsonMode) {
-            console.log(`   📡 所有查询尝试都失败: ${error.message}`);
-          }
-        } else {
-          if (!isJsonMode) {
-            console.log(`   ⚠️ 第${attempt}次查询失败，等待重试...`);
-          }
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        if (!isJsonMode) {
+          console.log(`   ⚠️ 查询Reference=${ref}失败: ${error.message}`);
         }
       }
+
+      // 在查询不同Reference之间添加短暂延迟
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
+    if (!messageResult && !isJsonMode) {
+      console.log(`   📭 未找到与Reference=${messageReference}相关联的处理结果`);
+      console.log(`   💡 可能原因：消息尚未被处理、处理结果尚未记录到链上、或CU API限制`);
+    }
 
     // 检查结果中是否有print输出
     if (messageResult && messageResult.Output) {
@@ -1424,6 +1336,61 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     tracedMessages,
     summary: `Traced ${tracedMessages.length} messages, ${tracedMessages.filter(m => m.hasPrintOutput).length} with print output`
   };
+}
+
+// 质量评估函数：评估Output的质量，返回分数
+function assessOutputQuality(outputData) {
+  if (!outputData) return 0;
+
+  const data = outputData.replace(/\u001b\[[0-9;]*m/g, ''); // 清理ANSI
+
+  // Handler输出：包含业务逻辑特征，长度适中，无系统特征
+  if (data.length > 50 && !data.includes('function: 0x') &&
+      !data.includes('Message added to outbox')) {
+    return 100; // 高质量Handler输出
+  }
+
+  // 系统输出
+  if (data.includes('Message added to outbox')) {
+    return 10; // 系统输出
+  }
+
+  return 50; // 其他输出
+}
+
+// 选择最佳的Trace结果
+function selectBestTraceResult(edges, targetReference) {
+  let bestResult = null;
+  let bestQuality = 0;
+
+  for (const edge of edges) {
+    if (!edge.node?.Messages) continue;
+
+    // 检查是否包含目标Reference
+    const hasMatchingReference = edge.node.Messages.some(msg =>
+      msg.Tags && msg.Tags.some(tag =>
+        tag.name === 'Reference' && tag.value === targetReference
+      )
+    );
+
+    if (hasMatchingReference) {
+      const quality = assessOutputQuality(edge.node.Output?.data || '');
+      if (quality > bestQuality) {
+        bestQuality = quality;
+        bestResult = edge;
+      }
+    }
+  }
+
+  return bestResult;
+}
+
+// 获取质量描述
+function getQualityDescription(quality) {
+  if (quality >= 100) return 'Handler输出，最高优先级';
+  if (quality >= 50) return '其他输出，中等优先级';
+  if (quality >= 10) return '系统输出，低优先级';
+  return '无输出';
 }
 
 
