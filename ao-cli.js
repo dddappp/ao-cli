@@ -1171,6 +1171,106 @@ program
 
 // 新的trace函数：使用捕获的发送消息信息
 
+// 打印完整的 CU 查询结果详情
+function printCompleteCUResult(messageResult, baseRef = null) {
+  // 防御性编码：确保 messageResult 存在且为对象
+  if (!messageResult || typeof messageResult !== 'object') {
+    console.log('   🔍 完整CU查询结果: (无数据)');
+    return;
+  }
+
+  console.log('   🔍 完整CU查询结果:');
+  console.log('   ┌─────────────────────────────────────────────────────────────┐');
+
+  // 安全地访问属性，使用可选链和默认值
+  console.log(`   │ Message ID: ${messageResult.id || 'N/A'}`);
+  console.log(`   │ Timestamp: ${messageResult.timestamp || 'N/A'}`);
+  console.log(`   │ Gas Used: ${messageResult.gasUsed || 'N/A'}`);
+  console.log(`   │ Reference: ${baseRef || 'N/A'}`);
+
+  // 使用正确的字段名 Messages (大写)
+  const messages = messageResult.Messages;
+  if (messages && Array.isArray(messages) && messages.length > 0) {
+    console.log(`   │ Messages: ${messages.length} item(s)`);
+    messages.forEach((msg, idx) => {
+      // 防御性编码：确保 msg 存在
+      if (!msg || typeof msg !== 'object') {
+        console.log(`   │   ${idx + 1}. (无效消息数据)`);
+        return;
+      }
+
+      console.log(`   │   ${idx + 1}. Target: ${msg.Target || 'N/A'}`);
+      console.log(`   │       From: ${msg.From || 'N/A'}`);
+
+      // 显示关键标签 - 防御性编码
+      if (msg.Tags && Array.isArray(msg.Tags)) {
+        const referenceTag = msg.Tags.find(tag => tag && tag.name === 'Reference');
+        const xReferenceTag = msg.Tags.find(tag => tag && tag.name === 'X-Reference');
+        const actionTag = msg.Tags.find(tag => tag && tag.name === 'Action');
+
+        if (referenceTag && referenceTag.value) console.log(`   │       🔗 Reference: ${referenceTag.value}`);
+        if (xReferenceTag && xReferenceTag.value) console.log(`   │       🔗 X-Reference: ${xReferenceTag.value}`);
+        if (actionTag && actionTag.value) console.log(`   │       🎬 Action: ${actionTag.value}`);
+
+        // 显示其他重要标签（排除系统标签）- 防御性编码
+        const otherTags = msg.Tags.filter(tag =>
+          tag && tag.name && !['Reference', 'X-Reference', 'Action', 'Data-Protocol', 'Variant', 'Type', 'From-Process', 'From-Module'].includes(tag.name)
+        );
+        if (otherTags.length > 0) {
+          console.log(`   │       📋 其他标签:`);
+          otherTags.slice(0, 3).forEach(tag => { // 只显示前3个其他标签
+            if (tag && tag.name && tag.value) {
+              console.log(`   │          ${tag.name}: ${tag.value}`);
+            }
+          });
+          if (otherTags.length > 3) {
+            console.log(`   │          ... 还有 ${otherTags.length - 3} 个标签`);
+          }
+        }
+      }
+
+      // 显示数据摘要（如果有）- 防御性编码
+      if (msg.Data) {
+        try {
+          const dataStr = typeof msg.Data === 'string' ? msg.Data : JSON.stringify(msg.Data);
+          const truncatedData = dataStr.length > 50 ? dataStr.substring(0, 50) + '...' : dataStr;
+          console.log(`   │       💾 Data: ${truncatedData}`);
+        } catch (e) {
+          console.log(`   │       💾 Data: (序列化错误)`);
+        }
+      }
+    });
+  } else {
+    console.log('   │ Messages: []');
+  }
+
+  // 显示 Output 信息 - 防御性编码
+  if (messageResult.Output && typeof messageResult.Output === 'object') {
+    console.log('   │ Output:');
+    if (messageResult.Output.data) {
+      try {
+        const dataStr = typeof messageResult.Output.data === 'string' ? messageResult.Output.data : JSON.stringify(messageResult.Output.data);
+        const truncatedData = dataStr.length > 100 ? dataStr.substring(0, 100) + '...' : dataStr;
+        console.log(`   │   Data: ${truncatedData}`);
+      } catch (e) {
+        console.log(`   │   Data: (序列化错误)`);
+      }
+    }
+    console.log(`   │   Print: ${messageResult.Output.print || false}`);
+  }
+
+  // 显示 Error 信息 - 防御性编码
+  if (messageResult.Error) {
+    try {
+      console.log(`   │ Error: ${JSON.stringify(messageResult.Error)}`);
+    } catch (e) {
+      console.log(`   │ Error: (序列化错误)`);
+    }
+  }
+
+  console.log('   └─────────────────────────────────────────────────────────────┘');
+}
+
 // 追踪发送消息的处理结果，用于显示接收进程Handler中的print输出
 async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMessageId = null) {
   if (!evalResult || !evalResult.Messages || evalResult.Messages.length === 0) {
@@ -1181,6 +1281,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
   }
 
   const tracedMessages = [];
+  let baseRef = null; // 在函数开始时声明baseRef
 
   if (!isJsonMode) {
     console.log('');
@@ -1227,6 +1328,9 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       }
       continue;
     }
+
+    // 只有当messageReference有效时才设置baseRef
+    baseRef = parseInt(messageReference);
 
     if (!isJsonMode) {
       console.log(`   🔗 消息Reference: ${messageReference}`);
@@ -1278,12 +1382,14 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     };
     // 简化逻辑：按注释要求实现
     let foundHandlerResult = false;
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       if (foundHandlerResult) break; // 如果已经找到了Handler结果，跳出外层循环
 
       try {
-        if (!isJsonMode && attempt === 1) {
-          console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}关联处理结果 (最多尝试 ${maxRetries} 次)...`);
+        // 只有当baseRef有效时才显示查询信息
+        if (!isJsonMode && attempt === 1 && baseRef !== null) {
+          console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${baseRef}关联处理结果 (最多尝试 ${maxRetries} 次)...`);
         }
 
         const resultsResponse = await queryProcessResults(wallet, targetProcess, 50);
@@ -1295,7 +1401,6 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 msg.Tags && msg.Tags.some(tag => {
                   if (tag.name === 'Reference') {
                     const refValue = parseInt(tag.value);
-                    const baseRef = parseInt(messageReference);
                     // 检查是否匹配 N, N+1, N+2 中的任意一个
                     return refValue === baseRef || refValue === baseRef + 1 || refValue === baseRef + 2;
                   }
@@ -1386,22 +1491,33 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           }
         }
       }
+
+      // 打印完整的 CU 查询结果
+      if (!isJsonMode && messageResult && baseRef !== undefined) {
+        printCompleteCUResult(messageResult, baseRef);
+      }
     }
 
+    // 在 tracedMessage中尽可能添加所有的从 CU 中查询到的信息！方便后续分析！打印时也注意将它们全部打印出来！
     const tracedMessage = {
       index: i + 1,
       status: messageResult ? (hasPrintOutput ? 'success_with_print' : 'success_no_print') : 'no_result',
+      messageId: evalMessageId || evalResult?.messageId || null, // 保持兼容性
       targetProcess,
-      hasPrintOutput
+      data: evalResult?.data || null, // 从 evalResult 中获取原始数据
+      hasPrintOutput,
+      baseRef: baseRef || null,
+      // 添加完整的 CU 查询结果
+      cuResult: messageResult || null
     };
 
+    // 保持原来的 result 字段结构，兼容现有测试
     if (messageResult) {
       tracedMessage.result = {
         output: messageResult.Output,
         error: messageResult.Error
       };
     }
-
     tracedMessages.push(tracedMessage);
 
     if (!isJsonMode) {
