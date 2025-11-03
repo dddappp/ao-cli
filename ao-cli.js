@@ -1240,32 +1240,6 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
     const maxRetries = 12; // 每个Reference最多重试12次
     const retryDelay = 8000; // 8秒间隔，避免CU API频率限制
 
-    const isSystemOutput = (outputData) => {
-      if (!outputData) return false;
-
-      // 处理不同格式的数据
-      let dataString;
-      if (typeof outputData === 'string') {
-        dataString = outputData;
-      } else if (typeof outputData === 'object') {
-        // 如果是对象，转换为字符串进行检查
-        dataString = JSON.stringify(outputData);
-      } else {
-        return false;
-      }
-
-      // 清理ANSI颜色代码后检查（处理AOS终端着色输出）
-      const cleanData = dataString.replace(/\u001b\[[0-9;]*m/g, '');
-      if (cleanData.includes('function: 0x')
-        && cleanData.includes('output')
-        && cleanData.includes('Message added to outbox')
-      ) {
-        return true;
-      }
-
-      return false;
-    };
-
     if (!isJsonMode) {
       console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}, ${messageReference}+1, ${messageReference}+2关联处理结果...`);
     }
@@ -1409,17 +1383,31 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
 function assessOutputQuality(outputData) {
   if (!outputData) return 0;
 
-  const data = outputData.replace(/\u001b\[[0-9;]*m/g, ''); // 清理ANSI
-
-  // Handler输出：包含业务逻辑特征，长度适中，无系统特征
-  if (data.length > 50 && !data.includes('function: 0x') &&
-      !data.includes('Message added to outbox')) {
-    return 100; // 高质量Handler输出
+  // 使用isSystemOutput的逻辑来识别系统输出
+  // 处理不同格式的数据
+  let dataString;
+  if (typeof outputData === 'string') {
+    dataString = outputData;
+  } else if (typeof outputData === 'object') {
+    // 如果是对象，转换为字符串进行检查
+    dataString = JSON.stringify(outputData);
+  } else {
+    dataString = '';
   }
 
-  // 系统输出
-  if (data.includes('Message added to outbox')) {
+  // 清理ANSI颜色代码后检查（处理AOS终端着色输出）
+  const cleanData = dataString.replace(/\u001b\[[0-9;]*m/g, '');
+
+  if (cleanData.includes('function: 0x')
+    && cleanData.includes('output')
+    && cleanData.includes('Message added to outbox')
+  ) {
     return 10; // 系统输出
+  }
+
+  // Handler输出：非系统输出，长度适中
+  if (cleanData.length > 50) {
+    return 100; // 高质量Handler输出
   }
 
   return 50; // 其他输出

@@ -88,36 +88,57 @@ function traceSentMessages(messageReference, targetProcessId) {
 - **性能优秀**：查询次数有限，响应快速
 - **向后兼容**：不破坏现有功能
 
-#### 结果筛选
+#### 结果筛选（等价逻辑）
+
+**核心逻辑保持不变**：优先选择Handler输出，系统输出作为备选
+
+**之前的实现**（isSystemOutput）：
 ```javascript
-function selectBestResult(edges) {
-  return edges
-    .map(edge => ({
-      edge,
-      quality: assessOutputQuality(edge.node.Output?.data)
-    }))
-    .sort((a, b) => b.quality - a.quality)[0]?.edge;
+if (!isSystemOutput(outputData)) {
+  // Handler结果 - 最佳选择
+  return result;
+} else if (!messageResult) {
+  // 系统结果 - 备选选择
+  messageResult = result;
+}
+```
+
+**现在的实现**（assessOutputQuality）：
+```javascript
+function selectBestTraceResult(edges, targetReference) {
+  let bestResult = null;
+  let bestQuality = 0;
+
+  for (const edge of edges) {
+    if (hasMatchingReference(edge, targetReference)) {
+      const quality = assessOutputQuality(edge.node.Output?.data);
+      if (quality > bestQuality) {  // 自动选择最高质量
+        bestQuality = quality;
+        bestResult = edge;
+      }
+    }
+  }
+
+  return bestResult;  // 自动返回最佳结果
 }
 
 function assessOutputQuality(outputData) {
-  if (!outputData) return 0;
-
-  const data = outputData.replace(/\u001b\[[0-9;]*m/g, ''); // 清理ANSI
-
-  // Handler输出：包含业务逻辑特征，长度适中，无系统特征
+  // Handler输出：100分（之前逻辑的"最佳选择"）
   if (data.length > 50 && !data.includes('function: 0x') &&
       !data.includes('Message added to outbox')) {
-    return 100; // 高质量Handler输出
+    return 100;
   }
 
-  // 系统输出
+  // 系统输出：10分（之前逻辑的"备选选择"）
   if (data.includes('Message added to outbox')) {
-    return 10; // 系统输出
+    return 10;
   }
 
   return 50; // 其他输出
 }
 ```
+
+**两种实现的等价性**：都优先选择Handler输出，都将系统输出作为备选。
 
 #### 劣势
 - **极少出现**：3个值的范围很小，误匹配概率极低
