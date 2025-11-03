@@ -310,9 +310,12 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 - ✅ **Reference标签确实存在**：CU API中可见，用于消息关联
 - ✅ **X-Reference用于运行时handler匹配**：`{From = from, ["X-Reference"] = referenceString}`
 
-**X-Reference的作用层次**：
-- **运行时层面**：用于handler匹配和消息路由（X-Reference）
-- **存储层面**：消息标识记录在CU API中（Reference标签）
+**X-Reference vs Reference的关键区别**：
+- **X-Reference**：运行时标签，用于`Handlers.once({["X-Reference"] = N})`匹配，不存储在CU API
+- **Reference**：存储标签，记录在CU API中，可用于追溯关联
+
+**为什么Trace不能直接使用X-Reference**：
+CU API只存储最终的消息记录（Reference），不存储运行时的匹配标签（X-Reference）。
 
 **Reference分配策略**：
 - 双进程通信：响应消息重用原始Reference

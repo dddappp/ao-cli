@@ -48,6 +48,15 @@ const hasMatchingReference = edge.node.Messages.some(msg =>
 #### 实现思路
 查找发送Reference及其相关Reference范围内的消息。
 
+#### 为什么不使用X-Reference？
+经过验证，X-Reference确实存在于AO系统中，但主要用于**运行时handler匹配**，而不是存储在CU API中。
+
+**X-Reference vs Reference在Trace中的应用**：
+- **X-Reference**：运行时标签，用于`Handlers.once({["X-Reference"] = N})`匹配
+- **Reference**：存储标签，记录在CU API中，可用于追溯关联
+
+**Trace查询CU API**：只能基于存储的Reference标签，无法直接查询X-Reference。
+
 #### 代码实现
 ```javascript
 function findRelatedMessages(messageReference, edges) {
