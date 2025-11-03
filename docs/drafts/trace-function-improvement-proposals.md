@@ -43,53 +43,85 @@ const hasMatchingReference = edge.node.Messages.some(msg =>
 
 ## 改进方案
 
-### Scheme 1: 扩展Reference范围匹配
+### Scheme 1: 简单递增Reference查找（推荐）
 
 #### 实现思路
-查找发送Reference及其相关Reference范围内的消息。
+基于通信模式分析，最多查找3个Reference值：N, N+1, N+2
 
-#### 为什么不使用X-Reference？
-经过验证，X-Reference确实存在于AO系统中，但主要用于**运行时handler匹配**，而不是存储在CU API中。
+**Reference分配模式**：
+- **双进程通信**：响应使用Reference=N（重用）
+- **单进程通信**：系统响应使用N，Handler响应使用N+1
 
-**X-Reference vs Reference在Trace中的应用**：
-- **X-Reference**：运行时标签，用于`Handlers.once({["X-Reference"] = N})`匹配
-- **Reference**：存储标签，记录在CU API中，可用于追溯关联
-
-**Trace查询CU API**：只能基于存储的Reference标签，无法直接查询X-Reference。
+#### 为什么这样设计？
+1. **简单有效**：避免复杂的算法，直接查找有限范围
+2. **覆盖所有场景**：N(双进程)+N(单进程系统)+N+1(单进程Handler)
+3. **性能良好**：最多查询3个值，查询开销小
 
 #### 代码实现
 ```javascript
-function findRelatedMessages(messageReference, edges) {
+function traceSentMessages(messageReference, targetProcessId) {
   const baseRef = parseInt(messageReference);
-  const relatedRefs = [
-    baseRef,        // 原始Reference
-    baseRef + 1,    // 下一个Reference (常见于Handler处理)
-    baseRef - 1,    // 上一个Reference (边界情况)
-    baseRef + 2,    // 更远的关联
-  ];
+  const candidates = [baseRef, baseRef + 1, baseRef + 2];
 
-  return edges.filter(edge => {
-    if (!edge.node?.Messages) return false;
+  for (const ref of candidates) {
+    try {
+      const results = await queryProcessResults(targetProcessId, ref);
+      if (results?.edges?.length > 0) {
+        // 找到匹配结果，使用质量评估选择最佳
+        const bestResult = selectBestResult(results.edges);
+        if (bestResult) {
+          return bestResult;
+        }
+      }
+    } catch (error) {
+      console.warn(`查询Reference=${ref}失败:`, error.message);
+    }
+  }
 
-    return edge.node.Messages.some(msg => {
-      const refTag = msg.Tags?.find(tag => tag.name === 'Reference');
-      if (!refTag) return false;
-
-      const msgRef = parseInt(refTag.value);
-      return relatedRefs.includes(msgRef);
-    });
-  });
+  return null; // 未找到合适结果
 }
 ```
 
 #### 优势
-- 覆盖常见的Reference递增模式
-- 实现简单，逻辑清晰
-- 向后兼容现有功能
+- **极其简单**：只需循环查询3个Reference值
+- **确定性强**：基于验证的通信模式分析
+- **性能优秀**：查询次数有限，响应快速
+- **向后兼容**：不破坏现有功能
+
+#### 结果筛选
+```javascript
+function selectBestResult(edges) {
+  return edges
+    .map(edge => ({
+      edge,
+      quality: assessOutputQuality(edge.node.Output?.data)
+    }))
+    .sort((a, b) => b.quality - a.quality)[0]?.edge;
+}
+
+function assessOutputQuality(outputData) {
+  if (!outputData) return 0;
+
+  const data = outputData.replace(/\u001b\[[0-9;]*m/g, ''); // 清理ANSI
+
+  // Handler输出：包含业务逻辑特征，长度适中，无系统特征
+  if (data.length > 50 && !data.includes('function: 0x') &&
+      !data.includes('Message added to outbox')) {
+    return 100; // 高质量Handler输出
+  }
+
+  // 系统输出
+  if (data.includes('Message added to outbox')) {
+    return 10; // 系统输出
+  }
+
+  return 50; // 其他输出
+}
+```
 
 #### 劣势
-- 可能匹配到不相关的消息
-- Reference递增不保证业务关联
+- **极少出现**：3个值的范围很小，误匹配概率极低
+- **质量评估保证**：通过Output质量评估确保选择正确的业务输出
 
 ### Scheme 2: 时间窗口关联
 
