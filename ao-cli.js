@@ -1232,9 +1232,6 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       console.log(`   🔗 消息Reference: ${messageReference}`);
     }
 
-    // 放宽方案：查找Reference = N, N+1, N+2（最多3个值）
-    const baseRef = parseInt(messageReference);
-    const candidates = [baseRef, baseRef + 1, baseRef + 2];
     const maxRetries = 12;
     const retryDelay = 8000; // 8秒间隔，避免CU API频率限制
 
@@ -1292,44 +1289,45 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
         const resultsResponse = await queryProcessResults(wallet, targetProcess, 50);
 
         if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
-          // 对每个候选Reference进行查找
-          for (const ref of candidates) {
-            if (foundHandlerResult) break; // 如果已经找到了Handler结果，跳出
+          for (const edge of resultsResponse.edges) {
+            if (edge.node && edge.node.Messages && Array.isArray(edge.node.Messages)) {
+              const hasMatchingReference = edge.node.Messages.some(msg =>
+                msg.Tags && msg.Tags.some(tag => {
+                  if (tag.name === 'Reference') {
+                    const refValue = parseInt(tag.value);
+                    const baseRef = parseInt(messageReference);
+                    // 检查是否匹配 N, N+1, N+2 中的任意一个
+                    return refValue === baseRef || refValue === baseRef + 1 || refValue === baseRef + 2;
+                  }
+                  return false;
+                })
+              );
 
-            for (const edge of resultsResponse.edges) {
-              if (edge.node && edge.node.Messages && Array.isArray(edge.node.Messages)) {
-                const hasMatchingReference = edge.node.Messages.some(msg =>
-                  msg.Tags && msg.Tags.some(tag =>
-                    tag.name === 'Reference' && tag.value === ref.toString()
-                  )
-                );
+              if (hasMatchingReference) {
+                const outputData = edge.node.Output?.data || '';
 
-                if (hasMatchingReference) {
-                  const outputData = edge.node.Output?.data || '';
+                // 只调用一次 isSystemOutput，避免重复计算
+                const isSystem = isSystemOutput(outputData);
 
-                  // 只调用一次 isSystemOutput，避免重复计算
-                  const isSystem = isSystemOutput(outputData);
-
-                  if (!isSystem && outputData.trim().length > 0) {
-                    // 找到了Handler结果，立即返回
+                if (!isSystem && outputData.trim().length > 0) {
+                  // 找到了Handler结果，立即返回
+                  messageResult = edge.node;
+                  if (!isJsonMode) {
+                    console.log(`   ✅ 第${attempt}次尝试成功！找到匹配的Handler处理结果`);
+                    console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
+                  }
+                  // 设置标志并break内层循环，外层循环会在下次迭代时检查标志并退出
+                  console.log(`   🔄 调试: 找到Handler结果，设置退出标志`);
+                  foundHandlerResult = true;
+                  break;
+                } else if (isSystem) {
+                  // 系统输出，作为备选结果，继续重试寻找更好的结果
+                  if (!messageResult) { // 只在还没有结果时记录备选结果
                     messageResult = edge.node;
                     if (!isJsonMode) {
-                      console.log(`   ✅ 第${attempt}次尝试成功！找到Reference=${ref}的Handler处理结果`);
-                      console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
+                      console.log(`   📝 第${attempt}次尝试找到匹配的系统输出（备选结果），继续重试寻找Handler结果...`);
                     }
-                    // 设置标志并break内层循环，外层循环会在下次迭代时检查标志并退出
-                    console.log(`   🔄 调试: 找到Handler结果，设置退出标志`);
-                    foundHandlerResult = true;
-                    break;
-                  } else if (isSystem) {
-                    // 系统输出，作为备选结果，继续重试寻找更好的结果
-                    if (!messageResult) { // 只在还没有结果时记录备选结果
-                      messageResult = edge.node;
-                      if (!isJsonMode) {
-                        console.log(`   📝 第${attempt}次尝试找到Reference=${ref}的系统输出（备选结果），继续重试寻找Handler结果...`);
-                      }
-                      // 继续重试，不在这里返回
-                    }
+                    // 继续重试，不在这里返回
                   }
                 }
               }
