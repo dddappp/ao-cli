@@ -1402,6 +1402,15 @@ function assessOutputQuality(outputData) {
     && cleanData.includes('output')
     && cleanData.includes('Message added to outbox')
   ) {
+    /*
+    ┌─────────────────────────────────────────────────────────────┐
+    │ {
+    │    onReply = function: 0x41ce1c0,
+    │    receive = function: 0x4113820,
+    │    output = "Message added to outbox"
+    │ }
+    └─────────────────────────────────────────────────────────────┘
+    */
     return 10; // 系统输出
   }
 
