@@ -1270,14 +1270,18 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}, ${messageReference}+1, ${messageReference}+2关联处理结果...`);
     }
 
-    // 对每个候选Reference进行查找（带重试）
-    for (const ref of candidates) {
-      if (!isJsonMode) {
-        console.log(`   🔍 查找Reference=${ref}...`);
+    // 重试循环：在每次重试中尝试所有候选Reference
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (!isJsonMode && attempt === 1) {
+        console.log(`   🔄 开始重试查找 (最多${maxRetries}次)...`);
       }
 
-      // 每个Reference的重试循环
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      // 在每次重试中，尝试所有候选Reference
+      for (const ref of candidates) {
+        if (!isJsonMode && candidates.length > 1) {
+          console.log(`   🔍 第${attempt}次尝试 - 查找Reference=${ref}...`);
+        }
+
         try {
           const resultsResponse = await queryProcessResults(wallet, targetProcess, 25);
 
@@ -1291,32 +1295,38 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 const quality = assessOutputQuality(bestResult.node.Output?.data || '');
                 console.log(`   ✅ 第${attempt}次尝试成功！找到Reference=${ref}的最佳处理结果 (${getQualityDescription(quality)})`);
               }
-              break; // 找到结果后停止这个Reference的查找
+              break; // 找到结果后停止所有查找
             }
           }
 
-          // 如果是最后一次尝试，记录失败
-          if (attempt === maxRetries && !isJsonMode) {
-            console.log(`   📭 Reference=${ref}未找到匹配结果`);
-          }
-
         } catch (error) {
-          if (attempt === maxRetries && !isJsonMode) {
-            console.log(`   📡 Reference=${ref}查询失败: ${error.message}`);
+          // 静默处理单个查询错误，继续下一个Reference
+          if (!isJsonMode && ref === candidates[candidates.length - 1]) {
+            console.log(`   ⚠️ 第${attempt}次尝试 - 所有Reference查询均失败`);
           }
         }
 
-        // 在重试之间等待
-        if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        // 在同一尝试的不同Reference之间短暂等待
+        if (ref < Math.max(...candidates)) {
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
 
-      // 如果已经找到结果，停止查找其他Reference
+      // 如果已经找到结果，停止重试
       if (messageResult) break;
 
-      // 在不同Reference之间添加短暂延迟
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // 在重试之间等待较长时间
+      if (attempt < maxRetries) {
+        if (!isJsonMode) {
+          console.log(`   ⏳ 第${attempt}次尝试未找到满意结果，等待 ${retryDelay}ms 后重试...`);
+        }
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        if (!isJsonMode) {
+          console.log(`   📭 经过 ${maxRetries} 次尝试，未找到与Reference=${messageReference}相关联的处理结果`);
+          console.log(`   💡 可能原因：消息尚未被处理、处理结果尚未记录到链上、或CU API限制`);
+        }
+      }
     }
 
     if (!messageResult && !isJsonMode) {
