@@ -1423,7 +1423,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                     console.log(`   🔍 结果类型：Handler处理结果（来自接收进程，最高优先级）`);
                   }
                   // 设置标志，break内层循环，外层循环会在下次迭代开始时检查并退出
-                  console.log(`   🔄 调试: 找到Handler结果，设置退出标志`);
+                  // console.log(`   🔄 调试: 找到Handler结果，设置退出标志`);
                   foundHandlerResult = true;
                   break;
                 } else if (isSystem) {
@@ -1438,11 +1438,11 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
                 }
               }
             }
-          }
+          } // end for (const edge of resultsResponse.edges) ...
 
           // 如果已经找到了Handler结果，跳过等待和最终检查
           if (foundHandlerResult) {
-            continue; // 跳到外层循环检查，立即退出
+            continue; // 跳到外层 for 循环检查处，立即退出
           }
 
           if (attempt < maxRetries) {
@@ -1474,7 +1474,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
           await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
-    }
+    } // end for (let attempt = 1; attempt <= maxRetries; attempt++) ...
 
 
     // 检查结果中是否有print输出
