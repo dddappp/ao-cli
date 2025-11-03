@@ -1414,8 +1414,9 @@ function assessOutputQuality(outputData) {
     return 10; // 系统输出
   }
 
-  // Handler输出：非系统输出，长度适中
-  if (cleanData.length > 50) {
+  // Handler输出：包含业务逻辑特征，长度适中，无系统特征
+  if (cleanData.length > 10 && !cleanData.includes('function: 0x') &&
+    !cleanData.includes('Message added to outbox')) {
     return 100; // 高质量Handler输出
   }
 
