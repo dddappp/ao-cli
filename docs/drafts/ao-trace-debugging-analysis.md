@@ -303,11 +303,16 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 2. 系统响应 → `Reference: N`
 3. Handler响应 → `Reference: N+1` (递增)
 
-**澄清**：经过验证，CU API数据中**不存在X-Reference标签**！
+**澄清**：X-Reference标签的可见性需要进一步分析！
 
-**我之前的分析错误地"发明"了X-Reference概念**，以为响应消息应该有一个指向原始消息的标签。
+**经过验证**：
+- ✅ **AO Lua代码中存在X-Reference**：在`ao.send()`和handler匹配中使用
+- ❓ **CU API中X-Reference标签**：当前查询未找到，可能由于API限制或标签不直接暴露
+- ✅ **Reference标签确实存在**：CU API中可见，用于消息关联
 
-**实际情况**：CU API只包含Reference标签，每个消息只有一个Reference值，没有X-Reference关联标签。
+**X-Reference的作用**：
+- 在运行时用于handler匹配：`{From = from, ["X-Reference"] = ao.reference}`
+- 可能不直接记录在CU API结果中，只在消息处理时使用
 
 **Reference分配策略**：
 - 双进程通信：响应消息重用原始Reference

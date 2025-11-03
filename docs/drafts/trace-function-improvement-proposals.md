@@ -4,7 +4,7 @@
 
 ### 🎯 核心发现：通信模式决定Reference分配策略
 
-经过验证，CU API中**不存在X-Reference标签**！之前的分析错误地"发明"了这个概念。
+经过验证，**AO Lua代码中存在X-Reference标签**，但CU API中可能不直接暴露。之前的分析错误地将X-Reference当作CU API可见标签。
 
 #### Reference分配策略差异（已澄清）
 **双进程通信**（接收进程视角）：
