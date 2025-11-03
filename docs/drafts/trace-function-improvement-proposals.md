@@ -9,7 +9,7 @@
 #### Reference分配策略差异（已澄清）
 **双进程通信**（接收进程视角）：
 - 系统记录收到消息：获得Reference=N
-- Handler处理并响应：**重用Reference=N**（碰巧相等）
+- Handler处理并响应：**重用Reference=N**（设计行为）
 - Trace查询Reference=N：直接获得Handler输出 ✅
 
 **单进程通信**（自身进程视角）：
