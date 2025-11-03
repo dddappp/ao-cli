@@ -1270,22 +1270,27 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       console.log(`   🔄 查询目标进程结果历史，尝试通过Reference=${messageReference}, ${messageReference}+1, ${messageReference}+2关联处理结果...`);
     }
 
-    // 重试循环：在每次重试中尝试所有候选Reference
+    // 重试循环：在每次重试中查询一次，然后匹配所有候选Reference
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       if (!isJsonMode && attempt === 1) {
         console.log(`   🔄 开始重试查找 (最多${maxRetries}次)...`);
       }
 
-      // 在每次重试中，尝试所有候选Reference
-      for (const ref of candidates) {
-        if (!isJsonMode && candidates.length > 1) {
-          console.log(`   🔍 第${attempt}次尝试 - 查找Reference=${ref}...`);
-        }
+      if (!isJsonMode) {
+        console.log(`   🔍 第${attempt}次尝试 - 查询目标进程结果...`);
+      }
 
-        try {
-          const resultsResponse = await queryProcessResults(wallet, targetProcess, 25);
+      try {
+        // 先查询一次，获取所有结果
+        const resultsResponse = await queryProcessResults(wallet, targetProcess, 25);
 
-          if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
+        if (resultsResponse && resultsResponse.edges && resultsResponse.edges.length > 0) {
+          // 然后在查询结果中匹配所有候选Reference
+          for (const ref of candidates) {
+            if (!isJsonMode && candidates.length > 1) {
+              console.log(`   🔍 检查Reference=${ref}...`);
+            }
+
             // 使用质量评估选择最佳结果
             const bestResult = selectBestTraceResult(resultsResponse.edges, ref.toString());
 
@@ -1298,17 +1303,18 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
               break; // 找到结果后停止所有查找
             }
           }
+        }
 
-        } catch (error) {
-          // 静默处理单个查询错误，继续下一个Reference
-          if (!isJsonMode && ref === candidates[candidates.length - 1]) {
-            console.log(`   ⚠️ 第${attempt}次尝试 - 所有Reference查询均失败`);
+        // 如果这次查询没有找到结果
+        if (!messageResult) {
+          if (!isJsonMode) {
+            console.log(`   📭 第${attempt}次尝试 - 未在查询结果中找到匹配的Reference`);
           }
         }
 
-        // 在同一尝试的不同Reference之间短暂等待
-        if (ref < Math.max(...candidates)) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        if (!isJsonMode) {
+          console.log(`   📡 第${attempt}次尝试 - 查询失败: ${error.message}`);
         }
       }
 
