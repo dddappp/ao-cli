@@ -91,12 +91,10 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 
 在继续分析之前，需要澄清几个重要概念：
 
-- **AO (Actor Oriented)**: 一种编程范式，强调消息传递和进程隔离
-- **AOS (Arweave Operating System)**: 基于Arweave的AO实现，提供REPL shell环境
+- **AO (Actor Oriented)** 网络: 基于 Arweave 的计算层 Web3 基础设施。AO 一词来源于 Actor Oriented 编程范式，强调消息传递和进程隔离
+- **AOS (Arweave Operating System)**: 和 AO 网络进行交互的工具，提供 REPL shell 环境
 - **CU (Compute Unit)**: AO网络中的计算节点，负责执行进程和记录结果
 - **MU (Messenger Unit)**: AO网络中的消息节点，负责消息传递
-
-AOS是AO生态系统中的一个具体实现，不是AO网络本身。本分析关注的是AO网络的底层机制。
 
 #### 数据结构发现
 
@@ -145,11 +143,11 @@ AOS是AO生态系统中的一个具体实现，不是AO网络本身。本分析�
 | 记录# | Reference | Action                   | Output类型      | 内容特征           |
 | ----- | --------- | ------------------------ | --------------- | ------------------ |
 | #18   | 9         | NFT-Transferable-Updated | 业务Handler输出 | ✅ 包含详细操作日志 |
-| #19   | 8         | Set-NFT-Transferable     | 系统输出        | ❌ AOS内部格式      |
+| #19   | 8         | Set-NFT-Transferable     | 系统输出        | ❌ 内部格式         |
 | #24   | 7         | Mint-Confirmation        | 业务Handler输出 | ✅ 包含详细操作日志 |
-| #25   | 6         | Mint-NFT                 | 系统输出        | ❌ AOS内部格式      |
+| #25   | 6         | Mint-NFT                 | 系统输出        | ❌ 内部格式         |
 | #37   | 2         | Mint-Confirmation        | 业务Handler输出 | ✅ 包含详细操作日志 |
-| #38   | 1         | Mint-NFT                 | 系统输出        | ❌ AOS内部格式      |
+| #38   | 1         | Mint-NFT                 | 系统输出        | ❌ 内部格式         |
 
 #### 消息类型分类
 
@@ -173,7 +171,7 @@ AOS是AO生态系统中的一个具体实现，不是AO网络本身。本分析�
     }
   ],
   "Output": {
-    "data": "🎯 接收进程Handler开始执行\n📨 收到来自发送进程的消息: Trace测试消息\n🔄 处理中...\n📤 发送响应消息\n✅ 接收进程Handler执行完成",
+    "data": "SET-NFT-TRANSFERABLE: Handler called with Action=Set-NFT-Transferable\nSET-NFT-TRANSFERABLE: Extracted tokenId='2', transferable='false'\n...",
     "prompt": "[Inbox:4]> "
   }
 }
@@ -181,12 +179,56 @@ AOS是AO生态系统中的一个具体实现，不是AO网络本身。本分析�
 
 ### Phase 4: 根因分析
 
+#### 🎯 核心发现：CU API数据记录策略差异
+
+通过对比成功和失败用例的CU API数据，我们发现了问题的真正根源：**CU API对不同"新鲜度"的进程采用不同的数据记录策略**！
+
+**成功用例数据结构（新鲜进程）**:
+```json
+{
+  "Messages": [
+    {
+      "Target": "发送进程ID",
+      "Reference": "2",
+      "Action": "ReceiverResponse"
+    }
+  ],
+  "Output": {
+    "data": "🎯 接收进程Handler开始执行\n📨 收到来自发送进程的消息: Trace测试消息\n🔄 处理中...\n📤 发送响应消息\n✅ 接收进程Handler执行完成"
+  }
+}
+```
+
+**失败用例数据结构（老化进程）**:
+```json
+{
+  "Messages": [],
+  "Output": {
+    "data": "4"  // 仅Inbox计数
+  }
+}
+```
+
+#### 数据记录策略差异
+
+**新鲜进程**（刚刚创建并处理消息）:
+- ✅ 记录完整的消息处理历史
+- ✅ 包含Messages数组的详细消息信息
+- ✅ Output.data包含Handler的print输出
+- ✅ 每个Reference都有对应的处理记录
+
+**老化进程**（长时间运行或处理大量消息）:
+- ❌ Messages数组为空
+- ❌ 只记录状态摘要（Inbox长度等）
+- ❌ 丢失详细的Handler处理记录
+- ❌ CU API仅维护状态快照
+
 #### Reference机制解析
 
 **关键洞察**：每个消息处理步骤都会获得新的Reference编号！
 
 1. **原始发送**：eval发送消息 → `Reference: 8`
-2. **系统处理**：AOS记录系统消息 → `Reference: 8`
+2. **系统处理**：AO 记录系统消息 → `Reference: 8`
 3. **业务处理**：Handler处理业务逻辑 → `Reference: 9`
 4. **响应生成**：Handler生成响应消息 → `Reference: 9`
 
@@ -259,23 +301,32 @@ const isHandlerOutput = (outputData) => {
 
 ## 结论
 
-### 核心发现
+### 🎯 核心发现
 
-1. **CU API数据完整性**：链上数据确实完整记录了所有消息处理历史
+**最关键的发现**：Trace功能成功与否不取决于消息处理流程，而是取决于**CU API的数据记录策略**！
+
+#### 数据记录策略差异（核心问题）
+- **新鲜进程**: CU API记录完整消息处理历史，包括Handler print输出
+- **老化进程**: CU API仅记录状态摘要，丢失详细处理记录
+
+#### 次要发现
+1. **CU API数据完整性**：链上数据确实完整记录了所有消息处理历史（新鲜进程）
 2. **Reference机制**：每个处理步骤获得独立的Reference编号
-3. **Trace功能缺陷**：只查找单一Reference，错过了相关的业务消息
+3. **Trace功能缺陷**：只查找单一Reference，错过了相关的业务消息（新鲜进程）
 
-### 技术启示
+### 💡 技术启示
 
-- AO的消息处理是分步骤的，每步都有独立的状态记录
-- CU API记录了完整的处理链，但需要正确的关联方式
-- 跨进程调试需要理解消息的完整生命周期
+- **CU API分层记录策略**：不同新鲜度的进程有不同的数据保留策略
+- AO的消息处理是分步骤的，每步都有独立的状态记录（新鲜进程）
+- 跨进程调试需要理解消息的完整生命周期和数据可用性
+- **新鲜度是关键因素**：进程的新鲜度决定了CU API数据的完整程度
 
-### 未来改进方向
+### 🔧 未来改进方向
 
-1. **增强Trace算法**：支持关联消息链查找
-2. **CU API优化**：提供更好的消息关联查询接口
-3. **文档完善**：详细说明Reference机制和消息处理流程
+1. **适应性Trace算法**：根据进程新鲜度调整查找策略
+2. **CU API优化**：提供更好的消息关联查询接口，支持历史数据查询
+3. **文档完善**：详细说明Reference机制、消息处理流程和数据保留策略
+4. **用户引导**：建议用户在新鲜进程上进行调试以获得完整trace信息
 
 ---
 
