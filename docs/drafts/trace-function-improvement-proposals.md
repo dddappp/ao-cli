@@ -2,20 +2,21 @@
 
 ## 现状分析
 
-### 🎯 核心发现：CU API数据记录策略差异
+### 🎯 核心发现：Reference递增机制和查找缺陷
 
-基于调试分析，我们发现了Trace功能成败的真正原因：**CU API对不同新鲜度的进程采用不同的数据记录策略**！
+基于重新分析，我们发现了Trace功能的关键问题：**Reference是递增的，但查找逻辑只找原始Reference**！
 
-#### 数据记录策略差异
-- **新鲜进程**：完整记录消息处理历史，包括Handler print输出
-- **老化进程**：仅记录状态摘要（如Inbox长度），丢失详细处理记录
+#### Reference递增机制
+- **发送消息**：获得Reference=N，CU记录系统输出
+- **Handler处理**：获得Reference=N+1，CU记录业务输出
+- **响应生成**：可能获得Reference=N+2，记录响应消息
 
 #### 技术问题
-虽然CU API记录了完整的消息处理历史（新鲜进程），但当前的Trace实现存在以下缺陷：
+CU API记录了完整的消息处理历史，但Trace的查找逻辑有缺陷：
 
-- **Reference匹配过于严格**：只查找发送消息的Reference，错过了Handler处理产生的相关记录
-- **数据可用性假设错误**：假设所有进程都有完整的历史记录（实际并非如此）
-- **缺乏适应性**：没有根据进程状态调整查找策略
+- **Reference匹配过于严格**：只查找发送消息的Reference=N
+- **错过Handler输出**：Handler的详细输出在Reference=N+1中
+- **查找范围不足**：没有扩展到相关的后续Reference
 
 ## 问题根因
 
@@ -256,64 +257,74 @@ describe('Trace Message Matching', () => {
 - 测试不同类型的Handler输出
 - 验证边界情况处理
 
-## 适应性策略
+## 改进策略
 
-### 进程新鲜度检测
+### Reference扩展匹配
 
-为了适应CU API的数据记录策略差异，Trace功能需要实现进程状态检测：
+实现查找原始Reference及其后续Reference的逻辑：
 
 ```javascript
-function detectProcessFreshness(processId) {
-  // 查询最近的处理记录
-  const recentRecords = await queryProcessResults(processId, { limit: 5 });
+function findRelatedReferences(baseReference, records) {
+  const baseRefNum = parseInt(baseReference);
+  const relatedRefs = new Set();
 
-  // 检测是否包含详细消息记录
-  const hasDetailedMessages = recentRecords.edges.some(edge =>
-    edge.node.Messages && edge.node.Messages.length > 0
-  );
+  // 查找基础Reference和后续Reference
+  records.forEach(record => {
+    record.node.Messages?.forEach(msg => {
+      const refTag = msg.Tags?.find(tag => tag.name === 'Reference');
+      if (refTag) {
+        const refNum = parseInt(refTag.value);
+        // 包含基础Reference和后续的几个Reference
+        if (refNum >= baseRefNum && refNum <= baseRefNum + 5) {
+          relatedRefs.add(refTag.value);
+        }
+      }
+    });
+  });
 
-  // 检测Output数据复杂度
-  const hasComplexOutput = recentRecords.edges.some(edge =>
-    edge.node.Output?.data &&
-    typeof edge.node.Output.data === 'string' &&
-    edge.node.Output.data.length > 10 &&
-    !/^\d+$/.test(edge.node.Output.data.trim())
-  );
-
-  return {
-    isFresh: hasDetailedMessages && hasComplexOutput,
-    hasMessageHistory: hasDetailedMessages,
-    hasComplexOutput: hasComplexOutput
-  };
+  return Array.from(relatedRefs).sort();
 }
 ```
 
-### 自适应查找策略
+### 输出质量评估
+
+对找到的记录进行质量排序：
 
 ```javascript
-function getAdaptiveSearchStrategy(processFreshness) {
-  if (processFreshness.isFresh) {
-    // 新鲜进程：使用完整Reference扩展匹配
-    return 'extended_reference_matching';
-  } else if (processFreshness.hasMessageHistory) {
-    // 部分新鲜进程：使用Reference扩展匹配
-    return 'reference_matching';
-  } else {
-    // 老化进程：提供状态摘要和建议
-    return 'status_summary_with_advice';
+function rankOutputQuality(record) {
+  const output = record.node.Output?.data || '';
+
+  // Handler业务输出（最高优先级）
+  if (typeof output === 'string' && output.length > 50 &&
+      !output.includes('function: 0x') &&
+      !output.includes('Message added to outbox')) {
+    return { quality: 'handler', score: 100 };
   }
+
+  // 系统输出（中等优先级）
+  if (output.includes('Message added to outbox')) {
+    return { quality: 'system', score: 50 };
+  }
+
+  // 其他输出（低优先级）
+  if (typeof output === 'string' && output.trim()) {
+    return { quality: 'other', score: 10 };
+  }
+
+  // 空输出（最低优先级）
+  return { quality: 'empty', score: 0 };
 }
 ```
 
 ## 部署计划
 
-1. **Phase 1**: 实现进程新鲜度检测机制
-2. **Phase 2**: 实现基础的Reference扩展匹配
-3. **Phase 3**: 添加自适应查找策略
-4. **测试验证**: 在不同新鲜度的进程上验证改进效果
+1. **Phase 1**: 实现Reference扩展匹配（查找Reference=N, N+1, N+2等）
+2. **Phase 2**: 优化查找逻辑（优先选择Handler输出而非系统输出）
+3. **Phase 3**: 改进时序处理（确保在Handler处理完成后进行查询）
+4. **测试验证**: 在单进程和双进程场景下验证改进效果
 5. **Phase 4**: 实现完整的内容评分系统
 6. **性能优化**: 确保查询效率不受影响
-7. **文档更新**: 更新Trace功能的使用说明和限制说明
+7. **文档更新**: 更新Trace功能的使用说明和技术细节
 
 ---
 

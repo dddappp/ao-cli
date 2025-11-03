@@ -179,49 +179,90 @@ export HTTPS_PROXY=http://127.0.0.1:1235 HTTP_PROXY=http://127.0.0.1:1235 ALL_PR
 
 ### Phase 4: 根因分析
 
-#### 🎯 核心发现：CU API数据记录策略差异
+#### 🎯 核心发现：进程间通信 vs 进程内通信的记录策略差异
 
-通过对比成功和失败用例的CU API数据，我们发现了问题的真正根源：**CU API对不同"新鲜度"的进程采用不同的数据记录策略**！
+通过重新分析数据，用户提出了关键质疑：**我们的成功用例使用了两个进程，而失败用例是一个进程自己给自己发送消息**！
 
-**成功用例数据结构（新鲜进程）**:
+#### 重新审视成功用例（双进程场景）
+
+**发送进程A的CU记录**（系统消息发送者）:
+```json
+{
+  "Messages": [
+    {"Target": "接收进程B", "Reference": "2", "Action": "TestReceiverPrint"}
+  ],
+  "Output": {
+    "data": "🚀 Trace测试：发送进程eval开始\n📤 Trace测试：消息已发送\nTrace测试完成"
+  }
+}
+```
+
+**接收进程B的CU记录**（业务逻辑处理器）:
+```json
+{
+  "Messages": [
+    {"Target": "发送进程A", "Reference": "2", "Action": "ReceiverResponse"}
+  ],
+  "Output": {
+    "data": "🎯 接收进程Handler开始执行\n📨 收到来自发送进程的消息: Trace测试消息\n🔄 处理中...\n✅ 接收进程Handler执行完成"
+  }
+}
+```
+
+**双进程场景特点**:
+- ✅ 发送进程：记录消息发送过程
+- ✅ 接收进程：记录Handler业务处理过程
+- ✅ Trace查询接收进程：获得完整的Handler输出
+
+#### 失败用例分析（单进程场景）
+
+**关键发现**：CU API实际上记录了完整的消息处理历史，包括Handler输出！
+
+**详细CU API查询结果**:
+
+**Reference=8记录** (系统消息发送):
 ```json
 {
   "Messages": [
     {
-      "Target": "发送进程ID",
-      "Reference": "2",
-      "Action": "ReceiverResponse"
+      "Target": "G8XryOcdv-AcyPMJa7wQ1IHbEvfmhGEDENnI6qe8U_U",
+      "Reference": "8",
+      "Action": "Set-NFT-Transferable"
     }
   ],
   "Output": {
-    "data": "🎯 接收进程Handler开始执行\n📨 收到来自发送进程的消息: Trace测试消息\n🔄 处理中...\n📤 发送响应消息\n✅ 接收进程Handler执行完成"
+    "data": "{\n   onReply = function: 0x41341a0,\n   receive = function: 0x41232a0,\n   output = \"Message added to outbox\"\n}"
   }
 }
 ```
 
-**失败用例数据结构（老化进程）**:
+**Reference=9记录** (Handler业务输出):
 ```json
 {
-  "Messages": [],
+  "Messages": [
+    {
+      "Target": "G8XryOcdv-AcyPMJa7wQ1IHbEvfmhGEDENnI6qe8U_U",
+      "Reference": "9",
+      "Action": "NFT-Transferable-Updated"
+    }
+  ],
   "Output": {
-    "data": "4"  // 仅Inbox计数
+    "data": "SET-NFT-TRANSFERABLE: Handler called with Action=Set-NFT-Transferable\nSET-NFT-TRANSFERABLE: Extracted tokenId='2', transferable='false'\nSET-NFT-TRANSFERABLE: Ownership check passed (owner=true, process=true)\nSET-NFT-TRANSFERABLE: All validations passed, updating NFT...\nSET-NFT-TRANSFERABLE: Operation completed successfully\nSET-NFT-TRANSFERABLE: Confirmation sent via msg.reply()"
   }
 }
 ```
 
-#### 数据记录策略差异
+**问题根源**：**Trace的查找逻辑有缺陷，没有找到Reference=9的Handler输出记录**！
 
-**新鲜进程**（刚刚创建并处理消息）:
-- ✅ 记录完整的消息处理历史
-- ✅ 包含Messages数组的详细消息信息
-- ✅ Output.data包含Handler的print输出
-- ✅ 每个Reference都有对应的处理记录
+#### 真正的根本原因
 
-**老化进程**（长时间运行或处理大量消息）:
-- ❌ Messages数组为空
-- ❌ 只记录状态摘要（Inbox长度等）
-- ❌ 丢失详细的Handler处理记录
-- ❌ CU API仅维护状态快照
+用户的质疑完全正确！流程确实是相同的：
+1. eval发送消息给自己，获得Reference=8
+2. 系统记录消息，Reference=8，Output为系统格式
+3. Handler处理消息，获得新的Reference=9
+4. 业务记录消息，Reference=9，Output为Handler详细日志
+
+**Trace功能的问题**：只查找Reference=8，没有查找相关的Reference=9！
 
 #### Reference机制解析
 
@@ -303,23 +344,25 @@ const isHandlerOutput = (outputData) => {
 
 ### 🎯 核心发现
 
-**最关键的发现**：Trace功能成功与否不取决于消息处理流程，而是取决于**CU API的数据记录策略**！
+**最关键的发现**：CU API记录了完整的消息处理历史，Trace功能的问题是查找逻辑缺陷！
 
-#### 数据记录策略差异（核心问题）
-- **新鲜进程**: CU API记录完整消息处理历史，包括Handler print输出
-- **老化进程**: CU API仅记录状态摘要，丢失详细处理记录
+#### 真正的核心问题
+- **CU API数据完整性**：实际上记录了所有消息处理历史，包括单进程通信的Handler输出
+- **Reference递增机制**：每个处理步骤获得新的Reference编号（8→9→10...）
+- **Trace查找缺陷**：只查找原始Reference，没有查找相关的后续Reference
 
-#### 次要发现
-1. **CU API数据完整性**：链上数据确实完整记录了所有消息处理历史（新鲜进程）
-2. **Reference机制**：每个处理步骤获得独立的Reference编号
-3. **Trace功能缺陷**：只查找单一Reference，错过了相关的业务消息（新鲜进程）
+#### 消息处理流程（统一的）
+1. **发送阶段**：eval发送消息 → Reference=N
+2. **系统记录**：CU记录发送操作 → Reference=N，Output=系统格式
+3. **Handler处理**：业务逻辑执行 → Reference=N+1，Output=Handler详细日志
+4. **响应生成**：生成回复消息 → 可能更多Reference
 
 ### 💡 技术启示
 
-- **CU API分层记录策略**：不同新鲜度的进程有不同的数据保留策略
-- AO的消息处理是分步骤的，每步都有独立的状态记录（新鲜进程）
-- 跨进程调试需要理解消息的完整生命周期和数据可用性
-- **新鲜度是关键因素**：进程的新鲜度决定了CU API数据的完整程度
+- **Reference是递增的**：每个处理步骤获得独立的Reference编号
+- **单进程通信也是完整的**：CU API记录了所有步骤的输出
+- **Trace需要扩展查找**：不仅要找原始Reference，还要找相关的后续Reference
+- **通信模式不影响记录**：无论是单进程还是双进程，CU API都记录完整历史
 
 ### 🔧 未来改进方向
 
