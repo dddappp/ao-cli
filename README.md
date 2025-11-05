@@ -4,6 +4,8 @@
 
 Universal AO CLI tool for testing and automating any AO dApp (replaces AOS REPL)
 
+> **⚠️ Important Notice**: This tool has not been sufficiently adapted and tested for mainnet environments. Please use it on legacy networks for development and testing purposes. Mainnet support is currently experimental and may not function as expected.
+
 ## Overview
 
 This is a non-interactive command-line interface for the AO (Arweave Offchain) ecosystem. Unlike the official `aos` REPL tool, this CLI exits after each command completes, making it perfect for automation, testing, and CI/CD pipelines.
