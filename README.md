@@ -34,7 +34,7 @@ This repository is a standalone, self-contained implementation of the AO CLI wit
 git clone https://github.com/dddappp/ao-cli.git
 cd ao-cli
 npm install
-npm link  # Makes 'ao-cli' available globally
+npm link  # Makes 'ao-cli' available locally for development/testing
 ```
 
 ### Verify Installation
@@ -282,7 +282,7 @@ All commands return JSON with a consistent structure:
   "command": "spawn|load|message|eval|inbox|address",
   "success": true|false,
   "timestamp": "2025-10-22T01:54:52.958Z",
-  "version": "1.0.3",
+  "version": "1.4.21",
   "data": {
     // Command-specific data (when successful)
     "processId": "...",
@@ -310,6 +310,29 @@ ao-cli message "$PROCESS_ID" TestAction --data "test" --wait --json | jq '.succe
 # Error handling - errors go to stderr as JSON
 ao-cli address --wallet nonexistent.json --json 2>&1 | jq '.error'
 ```
+
+#### Lua Print Output in JSON Mode
+
+When using `--json` output, all `print()` statements from your Lua code are captured in the response:
+
+```json
+{
+  "data": {
+    "result": {
+      "Output": {
+        "data": "🔍 Processing message...\n📊 Counter: 1\n✅ Done",
+        "print": true
+      }
+    }
+  }
+}
+```
+
+**Key Points:**
+- All `print()` output is collected in `Output.data` field
+- Original formatting is preserved (newlines, emojis, etc.)
+- `Output.print` is just a boolean flag indicating print output exists
+- Print statements are ordered chronologically as they execute
 
 #### Automation Benefits
 
@@ -543,10 +566,12 @@ ao-cli message <process-id> ping --data "ping" --url http://node.arweaveoasis.co
 
 The `tests/test-app.lua` provides handlers for:
 
-- `TestMessage`: Basic message testing with counter
+- `TestMessage`: Basic message testing with counter and detailed logging output
 - `SetData`/`GetData`: Key-value data operations
-- `TestInbox`: Inbox functionality testing
-- `TestError`: Error handling testing
+- `TestInbox`: Inbox functionality testing (sends internal messages to demonstrate inbox behavior)
+- `TestError`: Error handling testing (available for manual testing of error conditions)
+- `InboxTestReply`: Processes inbox test replies
+- `TestReceiverPrint`: Cross-process print testing for advanced debugging scenarios
 
 ## Future Improvements (TODOs)
 
