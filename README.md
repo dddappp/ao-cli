@@ -1,5 +1,7 @@
 # AO CLI
 
+> [中文版本](README_CN.md) | [English Version](README.md)
+
 Universal AO CLI tool for testing and automating any AO dApp (replaces AOS REPL)
 
 ## Overview
@@ -108,9 +110,9 @@ ao-cli spawn default --mainnet https://your-mainnet-node.com --name "mainnet-pro
 ao-cli load <process-id> tests/test-app.lua --wait
 ```
 
-> **注意**：如果进程ID以 `-` 开头，您可以使用以下任一种方法：
-> - 使用 `--` 分隔符：`ao-cli load -- <process-id> tests/test-app.lua --wait`
-> - 或者引号包裹：`ao-cli load "<process-id>" tests/test-app.lua --wait`
+> **Note**: If the process ID starts with `-`, you can use either of the following methods:
+> - Use `--` separator: `ao-cli load -- <process-id> tests/test-app.lua --wait`
+> - Or wrap with quotes: `ao-cli load "<process-id>" tests/test-app.lua --wait`
 
 #### Send Messages
 ```bash
@@ -124,9 +126,9 @@ ao-cli message <process-id> TestMessage --data "hello"
 ao-cli message <token-process-id> Transfer --prop Recipient=<target-address> --prop Quantity=100 --wait
 ```
 
-> **注意**：如果进程ID以 `-` 开头，您可以使用以下任一种方法：
-> - 使用 `--` 分隔符：`ao-cli message -- <process-id> TestMessage ...`
-> - 或者引号包裹：`ao-cli message "<process-id>" TestMessage ...`
+> **Note**: If the process ID starts with `-`, you can use either of the following methods:
+> - Use `--` separator: `ao-cli message -- <process-id> TestMessage ...`
+> - Or wrap with quotes: `ao-cli message "<process-id>" TestMessage ...`
 
 #### Evaluate Lua Code
 ```bash
@@ -137,9 +139,9 @@ ao-cli eval <process-id> --file script.lua --wait
 ao-cli eval <process-id> --data 'return "hello"' --wait
 ```
 
-> **注意**：如果进程ID以 `-` 开头，您可以使用以下任一种方法：
-> - 使用 `--` 分隔符：`ao-cli eval -- <process-id> --file script.lua --wait`
-> - 或者引号包裹：`ao-cli eval "<process-id>" --file script.lua --wait`
+> **Note**: If the process ID starts with `-`, you can use either of the following methods:
+> - Use `--` separator: `ao-cli eval -- <process-id> --file script.lua --wait`
+> - Or wrap with quotes: `ao-cli eval "<process-id>" --file script.lua --wait`
 
 #### Check Inbox
 ```bash
@@ -153,13 +155,13 @@ ao-cli inbox <process-id> --all
 ao-cli inbox <process-id> --wait --timeout 30
 ```
 
-> **📋 Inbox机制说明**：Inbox 是进程内部的全局变量，记录所有接收到的没有 handlers 处理的消息。要让**回复消息**进入*进程（发送方）*的 Inbox，需要在这个进程（发送方）内部执行Send操作（使用 `ao-cli eval`），外部API调用不会让消息进入 Inbox。
+> **📋 Inbox Mechanism Explanation**: Inbox is a global variable inside a process that records all received messages that have no handlers to process them. Handlers in the receiving process often reply to the sender; if the sender process wants the reply message to enter its own Inbox, it needs to execute a Send operation within that process (using `ao-cli eval`). Using `ao-cli message` to send messages directly will not cause reply messages to enter the process's Inbox.
 >
-> **🔍 --trace 功能说明**：`eval --trace` 通过查询目标进程的结果历史，尝试通过消息Reference精确关联并显示对应的Handler执行结果。如果找到精确匹配，会显示该消息触发handler的print输出；如果无法精确关联，则显示最近的handler活动作为参考。
+> **🔍 --trace Feature Explanation**: `eval --trace` queries the target process's result history and attempts to precisely associate handler execution results through message References. If an exact match is found, it displays the print output from the handler triggered by that message; if an exact association cannot be made, it displays the most recent handler activity as a reference. **Note**: This feature only applies to the `eval` command and is currently only effective in legacy mode (the tool has not been sufficiently adapted and tested for mainnet, and does not support result history queries).
 >
-> **注意**：如果进程ID以 `-` 开头，您可以使用以下任一种方法：
-> - 使用 `--` 分隔符：`ao-cli inbox -- <process-id> --latest`
-> - 或者引号包裹：`ao-cli inbox "<process-id>" --latest`
+> **Note**: If the process ID starts with `-`, you can use either of the following methods:
+> - Use `--` separator: `ao-cli inbox -- <process-id> --latest`
+> - Or wrap with quotes: `ao-cli inbox "<process-id>" --latest`
 
 ### Advanced Usage
 
@@ -249,8 +251,8 @@ ao-cli spawn default --name test --wallet /path/to/custom/wallet.json
 ### Manual Testing
 
 ```bash
-# 1. Spawn process
-PROCESS_ID=$(ao-cli spawn default --name "test-$(date +%s)" | grep "Process ID:" | awk '{print $4}')
+# 1. Spawn process (using JSON mode for reliable parsing)
+PROCESS_ID=$(ao-cli spawn default --name "test-$(date +%s)" --json | jq -r '.data.processId')
 
 # 2. Load test application
 ao-cli load "$PROCESS_ID" tests/test-app.lua --wait
@@ -268,6 +270,8 @@ ao-cli eval "$PROCESS_ID" --data "return {counter = State.counter}" --wait
 # 6. Check inbox
 ao-cli inbox "$PROCESS_ID" --latest
 ```
+
+> **💡 Tip**: If you prefer not to use JSON mode, you can also use the traditional parsing method: `PROCESS_ID=$(ao-cli spawn default --name "test-$(date +%s)" | grep "Process ID:" | awk '{print $4}')`
 
 ### Structured JSON Output for Automation
 
@@ -400,7 +404,7 @@ Spawn a new AO process.
 Load Lua file with automatic dependency resolution.
 
 **Options:**
-- `--wait`: Wait for evaluation result
+- `--wait`: Wait for evaluation result (default: true)
 
 ### `eval <processId> [options]`
 
@@ -410,6 +414,7 @@ Evaluate Lua code.
 - `--file <path>`: Lua file to evaluate
 - `--data <string>`: Lua code string
 - `--wait`: Wait for result
+- `--trace`: Trace sent messages for cross-process debugging (legacy network only)
 
 ### `message <processId> <action> [options]`
 
@@ -458,13 +463,13 @@ All commands provide clean, readable output:
 | Spawn (AOS Style)        | `aos my-process --url <url>`      | `ao-cli spawn default --url <url> --name my-process`     |
 | Load Code                | `.load app.lua`                   | `ao-cli load <pid> app.lua --wait`             |
 | Send Message             | `Send({Action="Test"})`           | `ao-cli message <pid> Test --wait`             |
-| Send Message (Inbox测试) | `Send({Action="Test"})`           | `ao-cli eval <pid> --data "Send({Action='Test'})" --wait` |
+| Send Message (Inbox Test) | `Send({Action="Test"})`           | `ao-cli eval <pid> --data "Send({Action='Test'})" --wait` |
 | Check Inbox              | `Inbox[#Inbox]`                   | `ao-cli inbox <pid> --latest`                  |
 | Eval Code                | `eval code`                       | `ao-cli eval <pid> --data "code" --wait`       |
 
-> **💡 重要说明**：
-> - 要测试Inbox功能，必须使用`ao-cli eval`在进程内部执行Send操作。直接使用`ao-cli message`不会让回复消息进入Inbox，因为那是外部API调用。
-> - 如果进程ID以 `-` 开头，您可以使用 `--` 分隔符或引号包裹，例如：`ao-cli load -- <pid> tests/test-app.lua --wait` 或 `ao-cli load "<pid>" tests/test-app.lua --wait`。
+> **💡 Important Notes**:
+> - To test Inbox functionality, you need to use `ao-cli eval` to execute Send operations within the process; do not use `ao-cli message` to send messages directly.
+> - If the process ID starts with `-`, you can use `--` separator or wrap with quotes, for example: `ao-cli load -- <pid> tests/test-app.lua --wait` or `ao-cli load "<pid>" tests/test-app.lua --wait`.
 
 ## Project Structure
 
