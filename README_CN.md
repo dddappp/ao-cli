@@ -164,7 +164,7 @@ ao-cli inbox <process-id> --wait --timeout 30
 
 > **📋 Inbox机制说明**：Inbox 是进程内部的全局变量，记录所有接收到的没有 handlers 处理的消息。消息的接收方的 handler 常常会向消息的发送方**回复消息**，如果消息的发送方（进程）想要让回复消息*进入*自己的 Inbox，则需要在这个进程内执行Send操作（使用 `ao-cli eval`）。使用 `ao-cli message` 直接发送消息不会让回复消息进入进程的 Inbox。
 >
-> **🔍 --trace 功能说明**：`eval --trace` 通过查询目标进程的结果历史，尝试通过消息Reference精确关联并显示对应的Handler执行结果。如果找到精确匹配，会显示该消息触发handler的print输出；如果无法精确关联，则显示最近的handler活动作为参考。**注意**：此功能仅适用于`eval`命令，目前在 legacy 测试网和本地 wao 网络中有效（主网不支持结果历史查询）。
+> **🔍 --trace 功能说明**：`eval --trace` 通过查询目标进程的结果历史，尝试通过消息Reference精确关联并显示对应的Handler执行结果。如果找到精确匹配，会显示该消息触发handler的print输出；如果无法精确关联，则显示最近的handler活动作为参考。**注意**：此功能仅适用于`eval`命令，目前仅在 legacy 测试网中有效（主网和本地 wao 网络不支持结果历史查询）。
 >
 > **注意**：如果进程ID以 `-` 开头，您可以使用以下任一种方法：
 > - 使用 `--` 分隔符：`ao-cli inbox -- <process-id> --latest`
@@ -440,7 +440,7 @@ ao-cli inbox <process-id> --latest
 - `--file <path>`：要执行的 Lua 文件
 - `--data <string>`：要执行的 Lua 代码字符串
 - `--wait`：等待结果
-- `--trace`：跟踪发送的消息以进行跨进程调试（legacy 测试网和本地 wao 网络）
+- `--trace`：跟踪发送的消息以进行跨进程调试（仅限 legacy 测试网）
 
 ### `message <processId> <action> [options]`
 

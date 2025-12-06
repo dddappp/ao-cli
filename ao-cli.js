@@ -1305,11 +1305,15 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
       console.log(`   🎯 目标进程: ${targetProcess}`);
     }
 
-    // 检查是否支持results查询（mainnet模式不支持）
+    // 检查是否支持results查询（mainnet和local模式不支持）
     const connectionInfo = getConnectionInfo();
-    if (connectionInfo.MODE === 'mainnet') {
+    if (connectionInfo.MODE === 'mainnet' || connectionInfo.MODE === 'local') {
       if (!isJsonMode) {
-        console.log(`   ⚠️ 主网模式不支持结果历史查询，跳过追踪`);
+        if (connectionInfo.MODE === 'mainnet') {
+          console.log(`   ⚠️ 主网模式不支持结果历史查询，跳过追踪`);
+        } else if (connectionInfo.MODE === 'local') {
+          console.log(`   ⚠️ 本地 wao 网络不支持结果查询，跳过追踪`);
+        }
       }
       continue;
     }
@@ -1630,8 +1634,8 @@ async function getMessageResult(wallet, messageId, targetProcess) {
 async function queryProcessResults(wallet, processId, limit = 10) {
   const connectionInfo = getConnectionInfo();
 
-  if (connectionInfo.MODE === 'mainnet') {
-    // Mainnet mode doesn't support results query API
+  if (connectionInfo.MODE === 'mainnet' || connectionInfo.MODE === 'local') {
+    // Mainnet and local modes don't support results query API
     // Return null to indicate no results available
     return null;
   } else {
