@@ -311,7 +311,7 @@ AO CLI 支持结构化 JSON 输出，用于自动化、测试和脚本编写。�
   "command": "spawn|load|message|eval|inbox|address",
   "success": true|false,
   "timestamp": "2025-10-22T01:54:52.958Z",
-  "version": "1.4.21",
+  "version": "1.4.22",
   "data": {
     // 命令特定数据（成功时）
     "processId": "...",
