@@ -209,6 +209,19 @@ AO CLI 支持 AO 测试网和主网。默认情况下，所有命令使用测试
 ao-cli spawn default --name "testnet-process"
 ```
 
+##### 本地 wao 模拟网络
+
+```bash
+# 使用 --local 标志连接 wao 本地模拟网络（默认端口 4000）
+ao-cli spawn default --local --name "local-process"
+
+# 指定自定义基准端口
+ao-cli spawn default --local 5000 --name "local-process"
+
+# 在本地网络中发送消息
+ao-cli message <process-id> TestAction --local --data "hello local AO!"
+```
+
 ##### 主网
 
 ```bash
@@ -229,6 +242,7 @@ ao-cli spawn default --name "mainnet-process"
 
 ##### 网络端点
 
+- **本地 wao 模拟网络**：`http://localhost:4000` (Gateway/AR), `http://localhost:4002` (MU), `http://localhost:4003` (CU)
 - **测试网**：`https://cu.ao-testnet.xyz`, `https://mu.ao-testnet.xyz`
 - **主网**：`https://forward.computer`（默认），或任何 AO 主网节点
 
@@ -365,6 +379,7 @@ ao-cli address --wallet nonexistent.json --json 2>&1 | jq '.error'
 
 - `--json`：以 JSON 格式输出结果，用于自动化和脚本编写
 - `--mainnet [url]`：启用主网模式（如果未提供 URL，则使用 https://forward.computer）
+- `--local [port]`：连接到本地 wao 模拟网络（默认端口：4000）
 - `--wallet <path>`：自定义钱包文件路径（默认：~/.aos.json）
 - `--gateway-url <url>`：Arweave 网关 URL
 - `--cu-url <url>`：计算单元 URL（仅测试网）
@@ -635,6 +650,74 @@ ao-cli message <process-id> ping --data "ping" --url http://node.arweaveoasis.co
 ### 🤝 贡献
 
 我们欢迎贡献！请查看我们的贡献指南，随时提交问题或拉取请求。
+
+## 本地 wao 网络集成指南
+
+AO CLI 支持连接 wao 启动的本地 AO Legacynet 模拟网络。
+
+### 启动本地 wao 网络
+
+在项目根目录运行：
+
+```bash
+# 使用默认端口（4000/4002/4003/4004）
+npx wao
+
+# 或指定自定义基准端口
+npx wao --port 5000
+
+# 可选参数
+npx wao --port 4000 --db .cache_wao --reset
+```
+
+端口对应关系：
+- Gateway (AR): `port` (默认 4000)
+- Messenger (MU): `port+2` (默认 4002)
+- Scheduler (SU): `port+3` (默认 4003)
+- Compute (CU): `port+4` (默认 4004)
+
+### 使用 AO CLI 连接本地网络
+
+```bash
+# 使用默认端口连接本地网络
+ao-cli spawn default --local --name "local-test-process"
+
+# 指定自定义基准端口
+ao-cli spawn default --local 5000 --name "local-test-process"
+
+# 在本地网络中加载代码
+ao-cli load <process-id> tests/test-app.lua --local --wait
+
+# 发送消息到本地网络进程
+ao-cli message <process-id> TestAction --local --data "hello local AO!" --wait
+
+# 检查本地网络进程的收件箱
+ao-cli inbox <process-id> --local --latest
+
+# 执行 Lua 代码（支持 dryrun）
+ao-cli eval <process-id> --local --data 'return "Hello from local network!"' --wait
+```
+
+### 与 aoconnect 直接对比
+
+AO CLI 的本地网络连接等同于以下 aoconnect 配置：
+
+```js
+import { connect, createDataItemSigner } from "@permaweb/aoconnect"
+
+const { spawn, message, dryrun } = connect({
+  GATEWAY_URL: "http://localhost:4000",  // AR
+  MU_URL: "http://localhost:4002",       // MU
+  CU_URL: "http://localhost:4003",       // CU
+})
+```
+
+### 注意事项
+
+- 本地网络不支持主网功能（如付费计算）
+- `dryrun` 在本地网络中可用（与主网不同）
+- 本地网络数据存储在指定目录中（`--db` 参数）
+- 使用 `--reset` 可重置本地网络数据库
 
 ## 故障排除
 

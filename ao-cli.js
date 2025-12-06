@@ -620,7 +620,7 @@ async function sendMessage({ wallet, processId, action, data, tags = [], props =
 
     // In JSON mode, don't output progress information
 
-    const result = await connect(connectionInfo).message(messageParams);
+    const result = await connect(toLegacyConnectParams(connectionInfo)).message(messageParams);
     return result;
   }
 }
@@ -654,7 +654,7 @@ async function getResult({ wallet, processId, messageId }) {
 
   } else {
     // Legacy/Testnet mode - original implementation
-    const result = await connect(connectionInfo).result({
+    const result = await connect(toLegacyConnectParams(connectionInfo)).result({
       process: processId,
       message: messageId
     });
@@ -678,6 +678,7 @@ program
   .option('--scheduler <id>', 'Scheduler ID')
   .option('--proxy <url>', 'Proxy URL for HTTPS/HTTP/ALL_PROXY')
   .option('--mainnet [url]', `Enable mainnet mode (uses ${DEFAULT_MAINNET_URL} if no URL provided)`)
+  .option('--local [port]', 'Connect to local wao simulated network (default port: 4000)')
   .option('--url <url>', 'Set AO URL (hidden parameter for AOS compatibility)')
   .option('--json', 'Output results in JSON format for automation and scripting');
 
@@ -1567,6 +1568,13 @@ function getConnect(connectionInfo) {
       const signer = createSigner(wallet);
       return connect({ ...connectionInfo, signer });
     };
+  } else if (connectionInfo.MODE === 'local') {
+    // Local wao network mode - similar to legacy but with local URLs
+    return connect({
+      GATEWAY_URL: connectionInfo.GATEWAY_URL,
+      CU_URL: connectionInfo.CU_URL,
+      MU_URL: connectionInfo.MU_URL
+    });
   } else {
     // Legacy mode
     return connect({
@@ -1575,6 +1583,15 @@ function getConnect(connectionInfo) {
       MU_URL: connectionInfo.MU_URL
     });
   }
+}
+
+// Remove MODE and other non-standard fields for legacy/local connect
+function toLegacyConnectParams(connectionInfo) {
+  return {
+    GATEWAY_URL: connectionInfo.GATEWAY_URL,
+    CU_URL: connectionInfo.CU_URL,
+    MU_URL: connectionInfo.MU_URL
+  };
 }
 
 // Get request function for mainnet
@@ -1641,6 +1658,31 @@ async function queryProcessResults(wallet, processId, limit = 10) {
 
 // Now we can check both CLI options and environment variables
 function getConnectionInfo() {
+  // Check for local wao network mode first
+  const cliLocal = program.opts().local;
+  if (cliLocal !== undefined) {
+    // Local wao network mode
+    const basePort = cliLocal === true ? 4000 : parseInt(cliLocal);
+    const gatewayUrl = program.opts().gatewayUrl || process.env.GATEWAY_URL || `http://localhost:${basePort}`;
+    const muUrl = `http://localhost:${basePort + 2}`;
+    // 按 wao 端口规则：SU=port+3，CU=port+4（默认 4003/4004）
+    const cuUrl = `http://localhost:${basePort + 4}`;
+
+    console.error('🏠 Using local wao simulated network:');
+    console.error(`   Gateway (AR): ${gatewayUrl}`);
+    console.error(`   Messenger (MU): ${muUrl}`);
+    console.error(`   Scheduler (SU): http://localhost:${basePort + 3}`);
+    console.error(`   Compute (CU): ${cuUrl}`);
+
+    return {
+      MODE: 'local',
+      GATEWAY_URL: gatewayUrl,
+      MU_URL: muUrl,
+      CU_URL: cuUrl,
+      basePort
+    };
+  }
+
   // Check for mainnet mode (CLI param takes priority over env var)
   const cliMainnet = program.opts().mainnet;
   const cliUrl = program.opts().url;
