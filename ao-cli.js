@@ -683,31 +683,31 @@ program
   .option('--json', 'Output results in JSON format for automation and scripting');
 
 program
-  .command('message-info')
+  .command('message-info <messageId> [targetProcessId]')
   .description('Query information about a sent message and optionally trace its execution')
-  .argument('<messageId>', 'Message ID to query information for')
   .option('--trace', 'Trace the message execution for cross-process debugging')
-  .option('--target <processId>', 'Target process ID to query (required for tracing)')
-  .action(async (messageId, options) => {
+  .action(async (messageId, targetProcessId, options) => {
     try {
       // Override environment with CLI options
-      if (program.opts().gatewayUrl) process.env.GATEWAY_URL = program.opts().gatewayUrl;
-      if (program.opts().cuUrl) process.env.CU_URL = program.opts().cuUrl;
-      if (program.opts().muUrl) process.env.MU_URL = program.opts().muUrl;
-      if (program.opts().scheduler) process.env.SCHEDULER = program.opts().scheduler;
-      if (program.opts().proxy) {
-        process.env.HTTPS_PROXY = program.opts().proxy;
-        process.env.HTTP_PROXY = program.opts().proxy;
-        process.env.ALL_PROXY = program.opts().proxy;
+      const globalOpts = program.opts();
+
+      if (globalOpts.gatewayUrl) process.env.GATEWAY_URL = globalOpts.gatewayUrl;
+      if (globalOpts.cuUrl) process.env.CU_URL = globalOpts.cuUrl;
+      if (globalOpts.muUrl) process.env.MU_URL = globalOpts.muUrl;
+      if (globalOpts.scheduler) process.env.SCHEDULER = globalOpts.scheduler;
+      if (globalOpts.proxy) {
+        process.env.HTTPS_PROXY = globalOpts.proxy;
+        process.env.HTTP_PROXY = globalOpts.proxy;
+        process.env.ALL_PROXY = globalOpts.proxy;
       }
 
-      const wallet = loadWallet(program.opts().wallet);
-      const isJsonMode = program.opts().json;
+      const wallet = loadWallet(globalOpts.wallet);
+      const isJsonMode = globalOpts.json;
 
-      await queryMessageInfo(messageId, options.target, wallet, options.trace, isJsonMode);
+      await queryMessageInfo(messageId, targetProcessId, wallet, options.trace, isJsonMode);
     } catch (error) {
       if (program.opts().json) {
-        console.error(createJsonOutput('message-info', false, { messageId, target: options.target }, error.message));
+        console.error(createJsonOutput('message-info', false, { messageId, target: targetProcessId }, error.message));
       } else {
         console.error('❌ Error:', error.message);
       }
@@ -1699,90 +1699,128 @@ async function queryMessageInfo(messageId, targetProcessId, wallet, enableTrace 
     console.log(`📨 查询消息信息: ${messageId}`);
     if (targetProcessId) {
       console.log(`🎯 目标进程: ${targetProcessId}`);
-    }
-  }
-
-  // First, try to get the message result
-  let messageResult = null;
-  try {
-    messageResult = await getMessageResult(wallet, messageId, targetProcessId);
-    if (!isJsonMode) {
-      console.log('✅ 消息结果获取成功');
-      console.log('📋 消息结果:');
-      console.log(JSON.stringify(messageResult, null, 2));
-    }
-  } catch (error) {
-    if (!isJsonMode) {
-      console.log('⚠️ 无法获取消息结果:', error.message);
-    }
-    messageResult = { Error: error.message };
-  }
-
-  // If trace is enabled and we have a target process, try to trace execution
-  if (enableTrace && targetProcessId) {
-    const connectionInfo = getConnectionInfo();
-    if (connectionInfo.MODE === 'mainnet' || connectionInfo.MODE === 'local') {
-      if (!isJsonMode) {
-        if (connectionInfo.MODE === 'mainnet') {
-          console.log('⚠️ 主网模式不支持结果历史查询，无法追踪');
-        } else {
-          console.log('⚠️ 本地 wao 网络不支持结果查询，无法追踪');
-        }
-      }
     } else {
-      // Try to find this message in the process results
-      if (!isJsonMode) {
-        console.log('\n🔍 🔍 追踪模式 🔍 🔍');
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log(`🔍 查询进程 ${targetProcessId} 的结果历史，查找消息 ${messageId} 的执行记录...`);
-      }
+      console.log(`ℹ️ 未指定目标进程，提供基本信息`);
+      console.log('');
+      console.log('📋 消息基本信息:');
+      console.log(`   消息ID: ${messageId}`);
+      console.log(`   状态: 未知（需要指定目标进程进行查询）`);
+      console.log('');
+      console.log('💡 AO 网络架构说明：');
+      console.log('   - 消息是点对点发送的，每个消息都有明确的目标进程');
+      console.log('   - 要查询消息结果，必须指定目标进程ID');
+      console.log('   - 这不是 API 限制，而是 AO 网络的设计原则');
+      console.log('');
+      console.log('🔍 查询完整信息，请使用:');
+      console.log(`   ao-cli message-info ${messageId} --target <process-id>`);
+      console.log('');
+      console.log('🔍 启用追踪功能，请使用:');
+      console.log(`   ao-cli message-info ${messageId} --target <process-id> --trace`);
+    }
+  }
 
-      try {
-        const results = await queryProcessResults(wallet, targetProcessId, 50);
-        if (results && results.edges && results.edges.length > 0) {
-          let foundExecution = false;
-          for (const edge of results.edges) {
-            const node = edge.node;
-            if (node && node.Messages && Array.isArray(node.Messages)) {
-              // Check if any message in this result matches our messageId
-              const matchingMessage = node.Messages.find(msg => msg.Id === messageId);
-              if (matchingMessage) {
-                foundExecution = true;
-                if (!isJsonMode) {
-                  console.log('✅ 找到消息执行记录！');
-                  console.log(`📊 执行时间: ${node.Timestamp || '未知'}`);
-                  console.log(`💰 Gas 使用: ${node.GasUsed || '未知'}`);
-                  if (node.Output && node.Output.data) {
-                    console.log('📝 Handler 输出:');
-                    console.log(node.Output.data);
+  let messageResult = null;
+  let traceResult = null;
+
+  // Only attempt to query if we have a target process
+  if (targetProcessId) {
+    try {
+      messageResult = await getMessageResult(wallet, messageId, targetProcessId);
+      if (!isJsonMode) {
+        console.log('✅ 消息结果获取成功');
+        console.log('📋 消息结果:');
+        console.log(JSON.stringify(messageResult, null, 2));
+      }
+    } catch (error) {
+      if (!isJsonMode) {
+        console.log('⚠️ 无法获取消息结果:', error.message);
+      }
+      messageResult = { Error: error.message };
+    }
+
+    // Handle tracing if enabled
+    if (enableTrace) {
+      const connectionInfo = getConnectionInfo();
+      if (connectionInfo.MODE === 'mainnet' || connectionInfo.MODE === 'local') {
+        if (!isJsonMode) {
+          if (connectionInfo.MODE === 'mainnet') {
+            console.log('⚠️ 主网模式不支持结果历史查询，无法追踪');
+          } else {
+            console.log('⚠️ 本地 wao 网络不支持结果查询，无法追踪');
+          }
+        }
+        traceResult = { Error: 'Tracing not supported in current network mode' };
+      } else {
+        if (!isJsonMode) {
+          console.log('\n🔍 🔍 追踪模式 🔍 🔍');
+          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.log(`🔍 查询进程 ${targetProcessId} 的结果历史，查找消息 ${messageId} 的执行记录...`);
+        }
+
+        try {
+          const results = await queryProcessResults(wallet, targetProcessId, 50);
+          if (results && results.edges && results.edges.length > 0) {
+            let foundExecution = false;
+            for (const edge of results.edges) {
+              const node = edge.node;
+              if (node && node.Messages && Array.isArray(node.Messages)) {
+                const matchingMessage = node.Messages.find(msg => msg.Id === messageId);
+                if (matchingMessage) {
+                  foundExecution = true;
+                  if (!isJsonMode) {
+                    console.log('✅ 找到消息执行记录！');
+                    console.log(`📊 执行时间: ${node.Timestamp || '未知'}`);
+                    console.log(`💰 Gas 使用: ${node.GasUsed || '未知'}`);
+                    if (node.Output && node.Output.data) {
+                      console.log('📝 Handler 输出:');
+                      console.log(node.Output.data);
+                    }
+                    if (node.Error) {
+                      console.log('❌ 执行错误:', node.Error);
+                    }
                   }
-                  if (node.Error) {
-                    console.log('❌ 执行错误:', node.Error);
-                  }
+                  traceResult = {
+                    found: true,
+                    timestamp: node.Timestamp,
+                    gasUsed: node.GasUsed,
+                    output: node.Output,
+                    error: node.Error
+                  };
+                  break;
                 }
-                break;
               }
             }
-          }
 
-          if (!foundExecution && !isJsonMode) {
-            console.log('❓ 未在最近的结果历史中找到此消息的执行记录');
-            console.log('💡 这可能是因为：');
-            console.log('   - 消息执行时间较久远（超出查询范围）');
-            console.log('   - 消息尚未被目标进程处理');
-            console.log('   - 消息执行失败或被跳过');
+            if (!foundExecution) {
+              if (!isJsonMode) {
+                console.log('❓ 未在最近的结果历史中找到此消息的执行记录');
+                console.log('💡 这可能是因为：');
+                console.log('   - 消息执行时间较久远（超出查询范围）');
+                console.log('   - 消息尚未被目标进程处理');
+                console.log('   - 消息执行失败或被跳过');
+              }
+              traceResult = { found: false, reason: 'Message not found in recent results' };
+            }
+          } else {
+            if (!isJsonMode) {
+              console.log('❓ 无法获取进程结果历史');
+            }
+            traceResult = { found: false, reason: 'Could not retrieve process results' };
           }
-        } else {
+        } catch (error) {
           if (!isJsonMode) {
-            console.log('❓ 无法获取进程结果历史');
+            console.log('❌ 查询结果历史失败:', error.message);
           }
-        }
-      } catch (error) {
-        if (!isJsonMode) {
-          console.log('❌ 查询结果历史失败:', error.message);
+          traceResult = { found: false, error: error.message };
         }
       }
     }
+  } else {
+    messageResult = {
+      Info: 'Target process ID required for complete message information',
+      messageId: messageId,
+      status: 'unknown'
+    };
   }
 
   if (isJsonMode) {
@@ -1790,6 +1828,7 @@ async function queryMessageInfo(messageId, targetProcessId, wallet, enableTrace 
       messageId,
       targetProcessId,
       messageResult,
+      traceResult,
       traceEnabled: enableTrace
     };
     console.log(JSON.stringify(createJsonOutput('message-info', true, result), null, 2));
