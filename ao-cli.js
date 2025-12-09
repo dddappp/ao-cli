@@ -1723,6 +1723,7 @@ async function queryMessageInfo(messageId, targetProcessId, wallet, enableTrace 
   let traceResult = null;
 
   // Only attempt to query if we have a target process
+  let messageReference = null;
   if (targetProcessId) {
     try {
       messageResult = await getMessageResult(wallet, messageId, targetProcessId);
@@ -1730,6 +1731,20 @@ async function queryMessageInfo(messageId, targetProcessId, wallet, enableTrace 
         console.log('✅ 消息结果获取成功');
         console.log('📋 消息结果:');
         console.log(JSON.stringify(messageResult, null, 2));
+      }
+
+      // 提取消息的Reference，用于后续追踪
+      if (messageResult && messageResult.Messages && messageResult.Messages.length > 0) {
+        const firstMessage = messageResult.Messages[0];
+        if (firstMessage.Tags && Array.isArray(firstMessage.Tags)) {
+          const referenceTag = firstMessage.Tags.find(tag => tag.name === 'Reference');
+          if (referenceTag) {
+            messageReference = referenceTag.value;
+            if (!isJsonMode) {
+              console.log(`🔗 提取到消息Reference: ${messageReference}`);
+            }
+          }
+        }
       }
     } catch (error) {
       if (!isJsonMode) {
@@ -1755,6 +1770,9 @@ async function queryMessageInfo(messageId, targetProcessId, wallet, enableTrace 
           console.log('\n🔍 🔍 追踪模式 🔍 🔍');
           console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           console.log(`🔍 查询进程 ${targetProcessId} 的结果历史，查找消息 ${messageId} 的执行记录...`);
+          if (messageReference) {
+            console.log(`🔗 将通过Reference=${messageReference}关联相关处理结果`);
+          }
         }
 
         try {
@@ -1764,7 +1782,20 @@ async function queryMessageInfo(messageId, targetProcessId, wallet, enableTrace 
             for (const edge of results.edges) {
               const node = edge.node;
               if (node && node.Messages && Array.isArray(node.Messages)) {
-                const matchingMessage = node.Messages.find(msg => msg.Id === messageId);
+                // 首先尝试通过消息ID直接匹配
+                let matchingMessage = node.Messages.find(msg => msg.Id === messageId);
+
+                // 如果没找到，通过Reference关联匹配（X-Reference标签）
+                if (!matchingMessage && messageReference) {
+                  matchingMessage = node.Messages.find(msg => {
+                    if (msg.Tags && Array.isArray(msg.Tags)) {
+                      const xRefTag = msg.Tags.find(tag => tag.name === 'X-Reference');
+                      return xRefTag && xRefTag.value === messageReference;
+                    }
+                    return false;
+                  });
+                }
+
                 if (matchingMessage) {
                   foundExecution = true;
                   if (!isJsonMode) {
@@ -1778,13 +1809,17 @@ async function queryMessageInfo(messageId, targetProcessId, wallet, enableTrace 
                     if (node.Error) {
                       console.log('❌ 执行错误:', node.Error);
                     }
+
+                    // 使用现有的函数显示完整结果
+                    printCompleteCUResult(node, messageReference);
                   }
                   traceResult = {
                     found: true,
                     timestamp: node.Timestamp,
                     gasUsed: node.GasUsed,
                     output: node.Output,
-                    error: node.Error
+                    error: node.Error,
+                    reference: messageReference
                   };
                   break;
                 }
