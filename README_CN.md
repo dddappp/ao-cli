@@ -462,6 +462,23 @@ ao-cli inbox <process-id> --latest
 - `--wait`：等待新消息
 - `--timeout <seconds>`：等待超时（默认：30）
 
+### `message-info <messageId> [options]`
+
+查询已发送消息的信息，并可选择追踪其执行过程。
+
+**选项**：
+- `--target <processId>`：目标进程ID（用于查询和追踪）
+- `--trace`：追踪消息执行过程（需要指定目标进程，仅限 legacy 测试网）
+
+**示例**：
+```bash
+# 查询消息基本信息
+ao-cli message-info 2PkU28XhpMhAzGmkDXHKExP69BaihgPiqDrLRpDgEoE --target <process-id>
+
+# 查询并追踪消息执行
+ao-cli message-info 2PkU28XhpMhAzGmkDXHKExP69BaihgPiqDrLRpDgEoE --target <process-id> --trace
+```
+
 ## 输出格式
 
 所有命令都提供清晰、可读的输出：

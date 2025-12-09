@@ -192,10 +192,11 @@ run_ao_cli() {
 
 # 初始化测试状态
 STEP_SUCCESS_COUNT=0
-STEP_TOTAL_COUNT=8
+STEP_TOTAL_COUNT=9
 STEP_1_SUCCESS=false
 STEP_2_SUCCESS=false
 STEP_3_SUCCESS=false
+STEP_35_SUCCESS=false
 STEP_4_SUCCESS=false
 STEP_5_SUCCESS=false
 STEP_6_SUCCESS=false
@@ -401,6 +402,42 @@ else
 fi
 echo ""
 
+# 3.5. 测试 message-info 命令
+echo "=== 步骤 3.5: 测试 message-info 命令 ==="
+if [ -z "$PROCESS_ID" ]; then
+    echo "⚠️ 跳过步骤 3.5（需要有效的进程ID）"
+    STEP_35_SUCCESS=false
+else
+    # 从步骤3的输出中提取消息ID（如果可用）
+    if [ -n "$FIRST_JSON" ] && echo "$FIRST_JSON" | jq -e '.success == true and .data.messageId' >/dev/null 2>&1; then
+        MESSAGE_ID=$(echo "$FIRST_JSON" | jq -r '.data.messageId')
+        echo "📨 使用消息ID: $MESSAGE_ID"
+
+        # 测试基本的 message-info 功能
+        echo "测试基本的 message-info 查询..."
+        if run_ao_cli message-info "$MESSAGE_ID" --target "$PROCESS_ID"; then
+            echo "✅ message-info 基本查询成功"
+            STEP_35_SUCCESS=true
+            ((STEP_SUCCESS_COUNT++))
+        else
+            echo "❌ message-info 基本查询失败"
+            STEP_35_SUCCESS=false
+        fi
+
+        # 测试带 --trace 选项的 message-info 功能
+        echo "测试带 --trace 选项的 message-info..."
+        if run_ao_cli message-info "$MESSAGE_ID" --target "$PROCESS_ID" --trace; then
+            echo "✅ message-info 追踪功能成功"
+        else
+            echo "⚠️ message-info 追踪功能可能受限（这是正常的，取决于网络类型）"
+        fi
+    else
+        echo "⚠️ 无法从步骤3提取消息ID，跳过 message-info 测试"
+        STEP_35_SUCCESS=false
+    fi
+fi
+echo ""
+
 # 4. 测试数据设置
 echo "=== 步骤 4: 测试数据设置 (message 命令) ==="
 if [ -z "$PROCESS_ID" ]; then
@@ -601,6 +638,12 @@ if $STEP_3_SUCCESS; then
     echo "✅ 步骤 3 (基本消息): 成功"
 else
     echo "❌ 步骤 3 (基本消息): 失败"
+fi
+
+if $STEP_35_SUCCESS; then
+    echo "✅ 步骤 3.5 (message-info): 成功"
+else
+    echo "❌ 步骤 3.5 (message-info): 失败"
 fi
 
 if $STEP_4_SUCCESS; then
