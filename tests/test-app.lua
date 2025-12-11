@@ -11,12 +11,7 @@ State.messages = State.messages or {}
 State.test_data = State.test_data or {}
 
 -- Configure authorities for wao local network (allows inter-process communication)
--- This enables the process to receive messages from other processes in the local network
-if not ao.authorities then
-    ao.authorities = {}
-end
--- Add common test wallet addresses (you may need to add specific sender addresses)
-table.insert(ao.authorities, "HrhlqAg1Tz3VfrFPozfcb2MV8uGfYlOSYO4qraRqKl4")  -- Default test wallet
+-- This will be dynamically configured by the test script after loading
 
 -- Helper function to send response
 function sendResponse(data, tags)

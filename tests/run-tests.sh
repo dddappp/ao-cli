@@ -266,6 +266,28 @@ else
         STEP_2_SUCCESS=true
         ((STEP_SUCCESS_COUNT++))
         echo "✅ 代码加载成功，当前成功计数: $STEP_SUCCESS_COUNT"
+
+        # 2.1. 配置 authorities（仅在本地模式下需要）
+        if $LOCAL_MODE; then
+            echo "正在配置 authorities 以支持进程间通信..."
+            # 获取当前钱包地址
+            WALLET_ADDRESS=$(run_ao_cli address 2>/dev/null | jq -r '.data.address // empty' 2>/dev/null || echo "")
+            if [ -n "$WALLET_ADDRESS" ]; then
+                # 动态配置 authorities
+                AUTHORITIES_CONFIG="if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, '$WALLET_ADDRESS'); return 'Authorities configured with: ' .. '$WALLET_ADDRESS'"
+                if AUTHORITIES_RESULT=$(run_ao_cli eval "$PROCESS_ID" --data "$AUTHORITIES_CONFIG" --wait 2>&1); then
+                    if echo "$AUTHORITIES_RESULT" | jq -e '.success == true' >/dev/null 2>&1; then
+                        echo "✅ Authorities 配置成功"
+                    else
+                        echo "⚠️ Authorities 配置可能有问题，但继续测试"
+                    fi
+                else
+                    echo "⚠️ Authorities 配置失败（可能不影响基本功能）"
+                fi
+            else
+                echo "⚠️ 无法获取钱包地址，跳过 authorities 配置"
+            fi
+        fi
     else
         STEP_2_SUCCESS=false
         echo "❌ 代码加载失败"
