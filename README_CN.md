@@ -760,7 +760,22 @@ end
 table.insert(ao.authorities, "sender_wallet_address")
 ```
 
-**测试应用已预配置**：`tests/test-app.lua` 已包含基本的 authorities 配置，允许来自默认测试钱包的消息通信。
+**动态配置 authorities**：测试脚本会自动检测当前钱包地址，并在加载测试应用后动态配置 authorities 以支持进程间通信。
+
+#### 动态配置示例
+
+```bash
+# 1. 创建进程
+PROCESS_ID=$(ao-cli spawn default --name "my-process" --json | jq -r '.data.processId')
+
+# 2. 加载应用
+ao-cli load "$PROCESS_ID" my-app.lua --wait
+
+# 3. 动态配置 authorities（允许特定地址发送消息）
+ao-cli eval "$PROCESS_ID" --data "if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, 'sender_wallet_address'); return 'Configured'" --wait
+
+# 4. 现在可以接收来自配置地址的消息了
+```
 
 ### 环境变量配置
 
