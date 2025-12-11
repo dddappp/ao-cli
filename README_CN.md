@@ -164,7 +164,7 @@ ao-cli inbox <process-id> --wait --timeout 30
 
 > **📋 Inbox机制说明**：Inbox 是进程内部的全局变量，记录所有接收到的没有 handlers 处理的消息。消息的接收方的 handler 常常会向消息的发送方**回复消息**，如果消息的发送方（进程）想要让回复消息*进入*自己的 Inbox，则需要在这个进程内执行Send操作（使用 `ao-cli eval`）。使用 `ao-cli message` 直接发送消息不会让回复消息进入进程的 Inbox。
 >
-> **🔍 --trace 功能说明**：`eval --trace` 通过查询目标进程的结果历史，尝试通过消息Reference精确关联并显示对应的Handler执行结果。如果找到精确匹配，会显示该消息触发handler的print输出；如果无法精确关联，则显示最近的handler活动作为参考。**注意**：此功能仅适用于`eval`命令，目前仅在 legacy 测试网中有效（主网和本地 wao 网络不支持结果历史查询）。
+> **🔍 --trace 功能说明**：`eval --trace` 通过查询目标进程的结果历史，尝试通过消息Reference精确关联并显示对应的Handler执行结果。如果找到精确匹配，会显示该消息触发handler的print输出；如果无法精确关联，则显示最近的handler活动作为参考。**注意**：此功能仅适用于`eval`命令，目前仅在 legacy 测试网和本地 wao 网络中有效（主网不支持结果历史查询）。
 >
 > **注意**：如果进程ID以 `-` 开头，您可以使用以下任一种方法：
 > - 使用 `--` 分隔符：`ao-cli inbox -- <process-id> --latest`
@@ -738,6 +738,36 @@ const { spawn, message, dryrun } = connect({
 - `dryrun` 在本地网络中可用（与主网不同）
 - 本地网络数据存储在指定目录中（`--db` 参数）
 - 使用 `--reset` 可重置本地网络数据库
+- **进程间通信完全支持**：包括消息发送、Inbox 功能和跨进程追踪
+- **需要配置 authorities**：在接收进程中添加发送进程地址以启用完整通信
+
+### 配置进程间通信
+
+要在 wao 本地网络中实现完整的进程间通信，请在接收进程中添加发送进程到 authorities 列表：
+
+```lua
+-- 方法1: 添加发送进程的地址
+table.insert(ao.authorities, "rQZc3CJqlLJM8Hk9pu--E3vYR0cMjhBK-VWwoPketzM")
+
+-- 方法2: 添加多个进程
+table.insert(ao.authorities, "process1_address")
+table.insert(ao.authorities, "process2_address")
+```
+
+### 环境变量配置
+
+使用以下环境变量连接 wao 测试环境：
+
+```bash
+export GATEWAY_URL=http://localhost:4000
+export MU_URL=http://localhost:4002
+export CU_URL=http://localhost:4004
+```
+
+然后启动 AOS 进程：
+```bash
+aos [进程名]
+```
 
 ## 故障排除
 

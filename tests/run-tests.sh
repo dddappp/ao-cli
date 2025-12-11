@@ -70,8 +70,8 @@ if $LOCAL_MODE; then
 
     # 本地模式默认模块（可通过 AO_TEST_MODULE 或 LOCAL_MODULE 覆盖）
     MODULE_ID="${AO_TEST_MODULE:-${LOCAL_MODULE:-Do_Uc2Sju_ffp6Ev0AnLVdPtot15rvMjP-a9VVaA5fM}}"
-    # 本地模式下允许跳过 Inbox 严格校验（避免 handler 不写入 Inbox 导致误判）
-    SKIP_INBOX=true
+    # 本地 wao 网络支持完整的进程间通信，包括 Inbox 功能
+    SKIP_INBOX=false
 else
     AO_TARGET_OPTS=()
     echo "=== AO CLI 自动化测试脚本 ==="
@@ -117,6 +117,8 @@ if $LOCAL_MODE; then
     echo "   使用模块: ${MODULE_ID}"
     if $SKIP_INBOX; then
         echo "   Inbox 校验: 本地模式下将跳过严格检查（命令成功即通过）"
+    else
+        echo "   Inbox 校验: 完整校验（包括内容验证）"
     fi
 fi
 echo ""
@@ -515,6 +517,7 @@ else
         STEP_7_SUCCESS=true
         ((STEP_SUCCESS_COUNT++))
     else
+        # 本地 wao 网络现在支持完整的 Inbox 功能，进行完整验证
         if [ "$USE_JSON" = "true" ]; then
             JSON_OUTPUT=$(run_ao_cli inbox "$PROCESS_ID" --latest)
             echo "📋 原始 JSON 输出:"

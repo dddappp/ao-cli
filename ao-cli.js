@@ -1345,7 +1345,7 @@ async function traceSentMessages(evalResult, wallet, isJsonMode = false, evalMes
         if (connectionInfo.MODE === 'mainnet') {
           console.log(`   ⚠️ 主网模式不支持结果历史查询，跳过追踪`);
         } else if (connectionInfo.MODE === 'local') {
-          console.log(`   ⚠️ 本地 wao 网络不支持结果查询，跳过追踪`);
+          console.log(`   ⚠️ 本地 wao 网络可能不支持结果查询，跳过追踪（请检查 wao 版本）`);
         }
       }
       continue;
@@ -1761,7 +1761,7 @@ async function queryMessageInfo(messageId, targetProcessId, wallet, enableTrace 
           if (connectionInfo.MODE === 'mainnet') {
             console.log('⚠️ 主网模式不支持结果历史查询，无法追踪');
           } else {
-            console.log('⚠️ 本地 wao 网络不支持结果查询，无法追踪');
+            console.log('⚠️ 本地 wao 网络可能不支持结果查询，无法追踪（请检查 wao 版本和配置）');
           }
         }
         traceResult = { Error: 'Tracing not supported in current network mode' };
