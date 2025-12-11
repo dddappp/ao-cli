@@ -752,7 +752,15 @@ table.insert(ao.authorities, "rQZc3CJqlLJM8Hk9pu--E3vYR0cMjhBK-VWwoPketzM")
 -- 方法2: 添加多个进程
 table.insert(ao.authorities, "process1_address")
 table.insert(ao.authorities, "process2_address")
+
+-- 方法3: 初始化 authorities 列表（如果不存在）
+if not ao.authorities then
+    ao.authorities = {}
+end
+table.insert(ao.authorities, "sender_wallet_address")
 ```
+
+**测试应用已预配置**：`tests/test-app.lua` 已包含基本的 authorities 配置，允许来自默认测试钱包的消息通信。
 
 ### 环境变量配置
 
