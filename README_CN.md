@@ -217,10 +217,27 @@ ao-cli spawn default --local --name "local-process"
 
 # 指定自定义基准端口
 ao-cli spawn default --local 5000 --name "local-process"
-
-# 在本地网络中发送消息
-ao-cli message <process-id> TestAction --local --data "hello local AO!"
 ```
+
+> **⚠️ 重要：进程间通信配置**
+>
+> **在使用 `--local` 模式进行进程间通信时，必须先配置 `ao.authorities`**。与正式 AO 网络不同，wao 本地网络需要显式授权才能接收来自其他进程的消息。
+>
+> ```bash
+> # 1. 创建接收进程
+> PROCESS_ID=$(ao-cli spawn default --local --name "receiver" --json | jq -r '.data.processId')
+>
+> # 2. 加载应用
+> ao-cli load "$PROCESS_ID" my-app.lua --local --wait
+>
+> # 3. ⚠️ 关键步骤：配置 authorities（允许发送者地址）
+> ao-cli eval "$PROCESS_ID" --local --data "if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, 'sender_wallet_address'); return 'Configured'" --wait
+>
+> # 4. 现在可以接收消息了
+> ao-cli message <process-id> TestAction --local --data "hello local AO!"
+> ```
+>
+> **不配置 authorities 会导致消息被拒绝**，即使进程间看起来可以通信。
 
 ##### 主网
 

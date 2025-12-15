@@ -221,8 +221,39 @@ ao-cli spawn default --name "mainnet-process"
 ```
 
 ##### Network Endpoints
+- **Local wao Simulated Network**: `http://localhost:4000` (Gateway/AR), `http://localhost:4002` (MU), `http://localhost:4004` (CU)
 - **Testnet**: `https://cu.ao-testnet.xyz`, `https://mu.ao-testnet.xyz`
 - **Mainnet**: `https://forward.computer` (default), or any AO mainnet node
+
+##### Local wao Simulated Network
+
+```bash
+# Use --local flag to connect to wao local simulated network (default port 4000)
+ao-cli spawn default --local --name "local-process"
+
+# Specify custom base port
+ao-cli spawn default --local 5000 --name "local-process"
+```
+
+> **⚠️ Important: Inter-Process Communication Configuration**
+>
+> **When using `--local` mode for inter-process communication, you MUST configure `ao.authorities` first**. Unlike the official AO network, wao local network requires explicit authorization to receive messages from other processes.
+>
+> ```bash
+> # 1. Create receiving process
+> PROCESS_ID=$(ao-cli spawn default --local --name "receiver" --json | jq -r '.data.processId')
+>
+> # 2. Load application
+> ao-cli load "$PROCESS_ID" my-app.lua --local --wait
+>
+> # 3. ⚠️ CRITICAL STEP: Configure authorities (allow sender address)
+> ao-cli eval "$PROCESS_ID" --local --data "if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, 'sender_wallet_address'); return 'Configured'" --wait
+>
+> # 4. Now you can receive messages
+> ao-cli message <process-id> TestAction --local --data "hello local AO!"
+> ```
+>
+> **Messages will be rejected without configuring authorities**, even if inter-process communication appears to work.
 
 ##### Configuration Priority
 1. **CLI parameters** take highest priority (e.g., `--mainnet https://custom-node.com`)
@@ -356,6 +387,7 @@ These options work with all commands:
 
 - `--json`: Output results in JSON format for automation and scripting
 - `--mainnet [url]`: Enable mainnet mode (uses https://forward.computer if no URL provided)
+- `--local [port]`: Connect to local wao simulated network (default port: 4000)
 - `--wallet <path>`: Custom wallet file path (default: ~/.aos.json)
 - `--gateway-url <url>`: Arweave gateway URL
 - `--cu-url <url>`: Compute Unit URL (testnet only)
