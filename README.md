@@ -247,7 +247,7 @@ ao-cli spawn default --local 5000 --name "local-process"
 > ao-cli load "$PROCESS_ID" my-app.lua --local --wait
 >
 > # 3. ⚠️ CRITICAL STEP: Configure authorities (allow sender address)
-> ao-cli eval "$PROCESS_ID" --local --data "if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, 'sender_wallet_address'); return 'Configured'" --wait
+> ao-cli eval "$PROCESS_ID" --local --data "if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, 'sender_address'); return 'Configured'" --wait
 >
 > # 4. Now you can receive messages
 > ao-cli message <process-id> TestAction --local --data "hello local AO!"

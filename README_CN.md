@@ -231,7 +231,7 @@ ao-cli spawn default --local 5000 --name "local-process"
 > ao-cli load "$PROCESS_ID" my-app.lua --local --wait
 >
 > # 3. ⚠️ 关键步骤：配置 authorities（允许发送者地址）
-> ao-cli eval "$PROCESS_ID" --local --data "if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, 'sender_wallet_address'); return 'Configured'" --wait
+> ao-cli eval "$PROCESS_ID" --local --data "if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, 'sender_address'); return 'Configured'" --wait
 >
 > # 4. 现在可以接收消息了
 > ao-cli message <process-id> TestAction --local --data "hello local AO!"
@@ -757,42 +757,6 @@ const { spawn, message, dryrun } = connect({
 - 使用 `--reset` 可重置本地网络数据库
 - **进程间通信完全支持**：包括消息发送、Inbox 功能和跨进程追踪
 - **需要配置 authorities**：在接收进程中添加发送进程地址以启用完整通信
-
-### 配置进程间通信
-
-要在 wao 本地网络中实现完整的进程间通信，请在接收进程中添加发送进程到 authorities 列表：
-
-```lua
--- 方法1: 添加发送进程的地址
-table.insert(ao.authorities, "rQZc3CJqlLJM8Hk9pu--E3vYR0cMjhBK-VWwoPketzM")
-
--- 方法2: 添加多个进程
-table.insert(ao.authorities, "process1_address")
-table.insert(ao.authorities, "process2_address")
-
--- 方法3: 初始化 authorities 列表（如果不存在）
-if not ao.authorities then
-    ao.authorities = {}
-end
-table.insert(ao.authorities, "sender_wallet_address")
-```
-
-**动态配置 authorities**：测试脚本会自动检测当前钱包地址，并在加载测试应用后动态配置 authorities 以支持进程间通信。
-
-#### 动态配置示例
-
-```bash
-# 1. 创建进程
-PROCESS_ID=$(ao-cli spawn default --name "my-process" --json | jq -r '.data.processId')
-
-# 2. 加载应用
-ao-cli load "$PROCESS_ID" my-app.lua --wait
-
-# 3. 动态配置 authorities（允许特定地址发送消息）
-ao-cli eval "$PROCESS_ID" --data "if not ao.authorities then ao.authorities = {} end; table.insert(ao.authorities, 'sender_wallet_address'); return 'Configured'" --wait
-
-# 4. 现在可以接收来自配置地址的消息了
-```
 
 ### 环境变量配置
 
