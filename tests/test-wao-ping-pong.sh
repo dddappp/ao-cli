@@ -84,7 +84,7 @@ WAO_CU="http://localhost:$((WAO_BASE_PORT + 4))"
 WAO_SU="http://localhost:$((WAO_BASE_PORT + 3))"
 
 # AO CLI 目标选项
-AO_TARGET_OPTS=(--local "$WAO_BASE_PORT")
+AO_TARGET_OPTS=(--local "$WAO_BASE_PORT" --gateway-url "$WAO_GATEWAY")
 
 echo "=== WAO 本地测试网络 Ping/Pong 验证脚本 ==="
 echo "WAO 基准端口: $WAO_BASE_PORT"
@@ -96,7 +96,7 @@ echo ""
 
 # 选择使用的 ao-cli 命令
 if [ "${AO_CLI_USE_SOURCE:-false}" = "true" ]; then
-    AO_CLI_CMD="node ../ao-cli.js"
+    AO_CLI_CMD="node ./ao-cli.js"
     echo "🔧 使用本地源码 ao-cli: $AO_CLI_CMD"
 else
     if ! command -v ao-cli &> /dev/null; then
@@ -111,30 +111,38 @@ fi
 WALLET_FILE="${HOME}/.aos.json"
 if [ ! -f "$WALLET_FILE" ]; then
     echo "❌ 钱包文件未找到: $WALLET_FILE"
-    echo "请先创建钱包文件（可以使用 ao-cli 或 aos）"
+    echo "请先创建钱包文件"
     exit 1
 fi
-
-# 获取钱包地址
-WALLET_ADDRESS=$($AO_CLI_CMD address "${AO_TARGET_OPTS[@]}" --json 2>/dev/null | jq -r '.data.address // empty' 2>/dev/null || echo "")
-if [ -z "$WALLET_ADDRESS" ]; then
-    echo "❌ 无法获取钱包地址"
-    exit 1
-fi
-echo "✅ 钱包地址: $WALLET_ADDRESS"
 
 # 辅助函数：运行 ao-cli 命令
 run_ao_cli() {
     local command="$1"
     local process_id="$2"
+
+    # Handle commands without process_id (like address)
+    if [ "$command" = "address" ]; then
+        $AO_CLI_CMD address "${AO_TARGET_OPTS[@]}" --json
+        return
+    fi
+
     shift 2
 
+    # Always add --json in JSON mode
     if [[ "$process_id" == -* ]]; then
-        $AO_CLI_CMD "$command" -- "$process_id" "${AO_TARGET_OPTS[@]}" --json "$@" 2>/dev/null
+        $AO_CLI_CMD "$command" -- "$process_id" "${AO_TARGET_OPTS[@]}" --json "$@"
     else
-        $AO_CLI_CMD "$command" "$process_id" "${AO_TARGET_OPTS[@]}" --json "$@" 2>/dev/null
+        $AO_CLI_CMD "$command" "$process_id" "${AO_TARGET_OPTS[@]}" --json "$@"
     fi
 }
+
+# 获取钱包地址
+WALLET_ADDRESS=$(run_ao_cli address 2>/dev/null | jq -r '.data.address // empty' 2>/dev/null || echo "")
+if [ -z "$WALLET_ADDRESS" ] || [ "$WALLET_ADDRESS" = "empty" ]; then
+    echo "❌ 无法获取钱包地址"
+    exit 1
+fi
+echo "✅ 钱包地址: $WALLET_ADDRESS"
 
 # 检查 WAO 服务状态
 check_wao_services() {
@@ -193,7 +201,7 @@ function SendPing(target_process_id)
     State.pings_sent = State.pings_sent + 1
     print("📤 发送 Ping #" .. State.pings_sent .. " 到: " .. target_process_id)
 
-    ao.send({
+    Send({
         Target = target_process_id,
         Action = "Ping",
         Data = "Ping #" .. State.pings_sent .. " from " .. ao.id
@@ -238,7 +246,7 @@ Handlers.add(
 
         -- 回复 Pong
         State.pongs_sent = State.pongs_sent + 1
-        ao.send({
+        Send({
             Target = msg.From,
             Action = "Pong",
             Data = "Pong #" .. State.pongs_sent .. " from " .. ao.id .. " (reply to ping #" .. State.pings_received .. ")"
@@ -276,9 +284,9 @@ main() {
 
     # 步骤 2: 创建 Ping 进程
     echo "=== 步骤 1: 创建 Ping 进程 ==="
-    PING_PROCESS_ID=$($AO_CLI_CMD spawn default "${AO_TARGET_OPTS[@]}" --name "ping-process-$(date +%s)" --json 2>&1 | jq -r '.data.processId // empty' 2>/dev/null || echo "")
+    PING_PROCESS_ID=$($AO_CLI_CMD spawn default "${AO_TARGET_OPTS[@]}" --name "ping-process-$(date +%s)" --json 2>&1 | awk '/^{/{flag=1} flag {print} /^}/{flag=0}' | jq -r '.data.processId // empty' 2>/dev/null || echo "")
 
-    if [ -z "$PING_PROCESS_ID" ]; then
+    if [ -z "$PING_PROCESS_ID" ] || [ "$PING_PROCESS_ID" = "empty" ]; then
         echo "❌ 无法创建 Ping 进程"
         exit 1
     fi
@@ -305,9 +313,9 @@ main() {
 
     # 步骤 3: 创建 Pong 进程
     echo "=== 步骤 2: 创建 Pong 进程 ==="
-    PONG_PROCESS_ID=$($AO_CLI_CMD spawn default "${AO_TARGET_OPTS[@]}" --name "pong-process-$(date +%s)" --json 2>&1 | jq -r '.data.processId // empty' 2>/dev/null || echo "")
+    PONG_PROCESS_ID=$($AO_CLI_CMD spawn default "${AO_TARGET_OPTS[@]}" --name "pong-process-$(date +%s)" --json 2>&1 | awk '/^{/{flag=1} flag {print} /^}/{flag=0}' | jq -r '.data.processId // empty' 2>/dev/null || echo "")
 
-    if [ -z "$PONG_PROCESS_ID" ]; then
+    if [ -z "$PONG_PROCESS_ID" ] || [ "$PONG_PROCESS_ID" = "empty" ]; then
         echo "❌ 无法创建 Pong 进程"
         exit 1
     fi
@@ -343,13 +351,10 @@ main() {
 
     # 发送第一个 Ping
     echo "🏓 发送第一个 Ping..."
-    PING_RESULT=$(run_ao_cli eval "$PING_PROCESS_ID" --data "SendPing('$PONG_PROCESS_ID')" --wait 2>&1)
-
-    if echo "$PING_RESULT" | jq -e '.success == true' >/dev/null 2>&1; then
+    if run_ao_cli eval "$PING_PROCESS_ID" --data "SendPing('$PONG_PROCESS_ID')" --wait >/dev/null 2>&1; then
         echo "✅ Ping 发送成功"
     else
         echo "❌ Ping 发送失败"
-        echo "错误详情: $(echo "$PING_RESULT" | jq -r '.error // "Unknown error"')"
         exit 1
     fi
 
