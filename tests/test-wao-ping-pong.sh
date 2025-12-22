@@ -360,19 +360,21 @@ main() {
 
     # 等待 Pong 回复
     echo "⏳ 等待 Pong 回复..."
-    sleep 3
+    sleep 5
 
     # 检查 Ping 进程状态
     echo "📊 检查 Ping 进程状态..."
-    PING_STATUS=$(run_ao_cli eval "$PING_PROCESS_ID" --data "return GetStatus()" --wait 2>&1)
-    PINGS_SENT=$(echo "$PING_STATUS" | jq -r '.data.result.pings_sent // 0' 2>/dev/null || echo "0")
-    PONGS_RECEIVED=$(echo "$PING_STATUS" | jq -r '.data.result.pongs_received // 0' 2>/dev/null || echo "0")
+    PING_STATUS=$(run_ao_cli eval "$PING_PROCESS_ID" --data "return GetStatus()" --wait 2>/dev/null)
+    # 从输出中提取数值
+    PINGS_SENT=$(echo "$PING_STATUS" | grep -o 'pings_sent = [0-9]*' | cut -d' ' -f3 2>/dev/null || echo "0")
+    PONGS_RECEIVED=$(echo "$PING_STATUS" | grep -o 'pongs_received = [0-9]*' | cut -d' ' -f3 2>/dev/null || echo "0")
 
     # 检查 Pong 进程状态
     echo "📊 检查 Pong 进程状态..."
-    PONG_STATUS=$(run_ao_cli eval "$PONG_PROCESS_ID" --data "return GetStatus()" --wait 2>&1)
-    PINGS_RECEIVED=$(echo "$PONG_STATUS" | jq -r '.data.result.pings_received // 0' 2>/dev/null || echo "0")
-    PONGS_SENT=$(echo "$PONG_STATUS" | jq -r '.data.result.pongs_sent // 0' 2>/dev/null || echo "0")
+    PONG_STATUS=$(run_ao_cli eval "$PONG_PROCESS_ID" --data "return GetStatus()" --wait 2>/dev/null)
+    # 从输出中提取数值
+    PINGS_RECEIVED=$(echo "$PONG_STATUS" | grep -o 'pings_received = [0-9]*' | cut -d' ' -f3 2>/dev/null || echo "0")
+    PONGS_SENT=$(echo "$PONG_STATUS" | grep -o 'pongs_sent = [0-9]*' | cut -d' ' -f3 2>/dev/null || echo "0")
 
     echo ""
     echo "📈 测试结果统计:"
