@@ -560,6 +560,28 @@ ao-cli/
 AO_WAIT_TIME=5 ./tests/run-tests.sh
 ```
 
+### WAO 本地网络 Ping/Pong 测试
+
+专门验证 WAO 本地测试网络的进程间通信功能：
+
+```bash
+# 验证 WAO 本地网络进程间通信（默认端口 4000）
+./tests/test-wao-ping-pong.sh
+
+# 指定自定义端口
+./tests/test-wao-ping-pong.sh --local 5000
+
+# 使用本地源码测试
+AO_CLI_USE_SOURCE=true ./tests/test-wao-ping-pong.sh
+```
+
+此脚本会：
+- ✅ 检查 WAO 服务是否正常运行
+- ✅ 创建两个进程（Ping 和 Pong）
+- ✅ 配置进程间通信权限（authorities）
+- ✅ 执行完整的 Ping/Pong 消息交换
+- ✅ 验证消息传递和处理结果
+
 ### 测试覆盖
 
 测试套件涵盖：
