@@ -790,9 +790,16 @@ export MU_URL=http://localhost:4002
 export CU_URL=http://localhost:4004
 ```
 
-然后启动 AOS 进程：
+然后使用 ao-cli 连接本地网络：
 ```bash
-aos [进程名]
+# 创建进程并连接到本地 WAO 网络
+ao-cli spawn default --local --name "my-process"
+
+# 或者使用环境变量
+export GATEWAY_URL=http://localhost:4000
+export MU_URL=http://localhost:4002
+export CU_URL=http://localhost:4004
+ao-cli spawn default --name "my-process"
 ```
 
 ## 故障排除
